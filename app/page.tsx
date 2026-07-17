@@ -8,6 +8,7 @@ import { PasswordField } from '@/components/PasswordField'
 import { CopyButton } from '@/components/CopyButton'
 import { ShareButton } from '@/components/ShareButton'
 import { SuccessTick } from '@/components/icons/SuccessTick'
+import { LogoMark } from '@/components/LogoMark'
 import { KeyRound } from 'lucide-react'
 
 type CustomUnit = 'minutes' | 'hours'
@@ -229,7 +230,10 @@ export default function HomePage() {
       </div>
       <form onSubmit={handleSubmit} className="w-full max-w-lg">
         <div className="mb-10">
-          <h1 className="font-display text-3xl tracking-tight">LevPriv</h1>
+          <div className="flex items-center gap-2.5">
+            <LogoMark size={62} />
+            <h1 className="font-display text-3xl tracking-tight">LevPriv</h1>
+          </div>
           <p className="text-base-muted mt-2 text-sm">
             Write something. Share a link. It disappears on its own.
           </p>

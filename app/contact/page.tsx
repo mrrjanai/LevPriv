@@ -1,7 +1,7 @@
 import { Mail } from 'lucide-react'
 
 // TODO: replace with your real contact email before deploying.
-const CONTACT_EMAIL = 'mrrjanai@gmail.com'
+const CONTACT_EMAIL = 'hello@levpriv.app'
 
 export default function ContactPage() {
   return (

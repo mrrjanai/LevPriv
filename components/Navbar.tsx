@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { LogoMark } from './LogoMark'
 
 export function Navbar() {
   return (
@@ -6,9 +7,12 @@ export function Navbar() {
       <div className="max-w-2xl mx-auto px-4 sm:px-6 py-4 sm:py-5 flex items-center justify-between gap-3">
         <Link
           href="/"
-          className="font-display text-lg sm:text-xl tracking-tight text-base-white hover:text-base-muted transition-colors shrink-0"
+          className="flex items-center gap-2 shrink-0 group"
         >
-          LevPriv
+          <LogoMark size={52} />
+          <span className="font-display text-lg sm:text-xl tracking-tight text-base-white group-hover:text-base-muted transition-colors">
+            LevPriv
+          </span>
         </Link>
         <nav className="flex items-center gap-x-3 sm:gap-x-4 text-[11px] sm:text-xs text-base-muted overflow-x-auto whitespace-nowrap scrollbar-none">
           <Link href="/dashboard" className="hover:text-base-white transition-colors">

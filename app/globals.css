@@ -72,11 +72,11 @@ button:focus {
   }
 }
 
+/* Hides scrollbar on the mobile nav row while remaining scrollable */
 .scrollbar-none {
-    scrollbar-width: none;
-    -ms-overflow-style: none;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
-
-    .scrollbar-none::-webkit-scrollbar {
-        display: none;
-    }
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
