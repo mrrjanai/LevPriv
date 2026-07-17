@@ -3,14 +3,14 @@ import Link from 'next/link'
 export function Navbar() {
   return (
     <header className="w-full border-b border-base-border">
-      <div className="max-w-2xl mx-auto px-6 py-5 flex flex-wrap items-center justify-between gap-y-3">
+      <div className="max-w-2xl mx-auto px-4 sm:px-6 py-4 sm:py-5 flex items-center justify-between gap-3">
         <Link
           href="/"
-          className="font-display text-xl tracking-tight text-base-white hover:text-base-muted transition-colors"
+          className="font-display text-lg sm:text-xl tracking-tight text-base-white hover:text-base-muted transition-colors shrink-0"
         >
           LevPriv
         </Link>
-        <nav className="flex flex-wrap items-center justify-end gap-x-4 gap-y-1.5 text-xs text-base-muted">
+        <nav className="flex items-center gap-x-3 sm:gap-x-4 text-[11px] sm:text-xs text-base-muted overflow-x-auto whitespace-nowrap scrollbar-none">
           <Link href="/dashboard" className="hover:text-base-white transition-colors">
             My notes
           </Link>
