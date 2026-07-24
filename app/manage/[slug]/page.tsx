@@ -203,6 +203,13 @@ function ManagePageInner() {
               <Row label="Views" value={String(meta.views ?? 0)} />
               <Row label="Protected with private key" value={meta.hasPrivateKey ? 'Yes' : 'No'} />
               <Row label="Deletes after first read" value={meta.burnAfterReading ? 'Yes' : 'No'} />
+              {meta.attachment && (
+                <Row
+                  label="Attachment"
+                  value={`${meta.attachment.kind} · ${meta.attachment.fileName}`}
+                />
+              )}
+              
             </dl>
 
             <div className="mb-8">

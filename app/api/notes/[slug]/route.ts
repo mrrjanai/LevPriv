@@ -3,7 +3,16 @@ import { redis, noteKey } from '@/lib/redis'
 import { decryptContent, sha256Hex } from '@/lib/crypto'
 import { viewLimiter, wrongKeyLimiter, getClientIp } from '@/lib/ratelimit'
 import { MAX_DURATION_SECONDS } from '@/lib/duration'
-import type { StoredNote, NotePublicMeta, ExtendNoteRequest, ExtendNoteResponse } from '@/lib/types'
+import { issueMediaToken } from '@/lib/mediaToken'
+import { deleteBlobSafely } from '@/lib/blob'
+import type {
+  StoredNote,
+  NotePublicMeta,
+  ExtendNoteRequest,
+  ExtendNoteResponse,
+  RevealNoteResponse,
+  PublicAttachmentMeta,
+} from '@/lib/types'
 
 export const runtime = 'nodejs'
 
@@ -20,9 +29,18 @@ function isExpired(note: StoredNote): boolean {
   return Date.now() >= note.expiresAt
 }
 
-// GET: returns non-sensitive metadata only (never the decrypted content).
-// Used for the countdown timer and to know whether a private key is required.
-// If a valid owner token is supplied as a query param, also returns view/owner stats.
+function toPublicAttachment(note: StoredNote): PublicAttachmentMeta | null {
+  if (!note.attachment) return null
+  const { kind, mimeType, fileName, sizeBytes } = note.attachment
+  return { kind, mimeType, fileName, sizeBytes }
+}
+
+async function cleanupIfGone(note: StoredNote | null): Promise<void> {
+  if (note && (note.deleted || isExpired(note)) && note.attachment) {
+    await deleteBlobSafely(note.attachment.blobPathname)
+  }
+}
+
 export async function GET(req: NextRequest, { params }: { params: { slug: string } }) {
   const ip = getClientIp(req)
   const { success } = await viewLimiter.limit(ip)
@@ -31,6 +49,7 @@ export async function GET(req: NextRequest, { params }: { params: { slug: string
   }
 
   const note = await loadNote(params.slug)
+  await cleanupIfGone(note)
 
   if (!note || note.deleted || isExpired(note)) {
     const meta: NotePublicMeta = {
@@ -51,6 +70,7 @@ export async function GET(req: NextRequest, { params }: { params: { slug: string
     deleted: false,
     hasPrivateKey: note.hasPrivateKey,
     burnAfterReading: note.burnAfterReading,
+    attachment: toPublicAttachment(note),
     expiresAt: note.expiresAt,
     createdAt: note.createdAt,
     views: isOwner ? note.views : undefined,
@@ -59,9 +79,6 @@ export async function GET(req: NextRequest, { params }: { params: { slug: string
   return NextResponse.json(meta, { status: 200 })
 }
 
-// POST: reveals decrypted note content (requires privateKey in body if the
-// note was created with one). Increments the view counter on success, and
-// destroys the note immediately if burnAfterReading is set.
 export async function POST(req: NextRequest, { params }: { params: { slug: string } }) {
   const ip = getClientIp(req)
   const { success } = await viewLimiter.limit(ip)
@@ -70,6 +87,7 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
   }
 
   const note = await loadNote(params.slug)
+  await cleanupIfGone(note)
 
   if (!note || note.deleted || isExpired(note)) {
     return NextResponse.json(
@@ -93,9 +111,6 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
     )
   }
 
-  // Lockout + artificial delay on wrong-key attempts to slow brute-forcing.
-  // Keyed by slug+ip so an attacker can't lock a note out for its real owner
-  // by hammering it from a different IP.
   if (note.hasPrivateKey && privateKey) {
     const attemptKey = `${ip}:${params.slug}`
     const { success: keyAttemptsOk } = await wrongKeyLimiter.limit(attemptKey)
@@ -109,49 +124,49 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
   }
 
   try {
-    const content = decryptContent({
-      cipherText: note.cipherText,
-      iv: note.iv,
-      authTag: note.authTag,
-      salt: note.salt,
-      privateKey,
-    })
+    const content = note.cipherText
+      ? decryptContent({
+          cipherText: note.cipherText,
+          iv: note.iv,
+          authTag: note.authTag,
+          salt: note.salt,
+          privateKey,
+        })
+      : ''
+
+    const mediaToken = note.attachment ? issueMediaToken(params.slug) : null
+    const attachmentMeta = toPublicAttachment(note)
 
     if (note.burnAfterReading) {
-      // Destroy immediately after a successful read.
       await redis.del(noteKey(params.slug))
-      return NextResponse.json(
-        {
-          content,
-          views: note.views + 1,
-          createdAt: note.createdAt,
-          expiresAt: note.expiresAt,
-          burned: true,
-        },
-        { status: 200 }
-      )
+
+      const response: RevealNoteResponse = {
+        content,
+        views: note.views + 1,
+        createdAt: note.createdAt,
+        expiresAt: note.expiresAt,
+        burned: true,
+        attachment: attachmentMeta,
+        mediaToken,
+      }
+      return NextResponse.json(response, { status: 200 })
     }
 
-    // Increment view count. Best-effort; note may have just expired between
-    // the read above and this write, in which case ex will simply re-apply
-    // a fresh TTL slightly extending life by a fraction of a second — acceptable.
     const updated: StoredNote = { ...note, views: note.views + 1 }
     const remainingTtlSeconds = Math.max(1, Math.ceil((note.expiresAt - Date.now()) / 1000))
     await redis.set(noteKey(params.slug), updated, { ex: remainingTtlSeconds })
 
-    return NextResponse.json(
-      {
-        content,
-        views: updated.views,
-        createdAt: note.createdAt,
-        expiresAt: note.expiresAt,
-        burned: false,
-      },
-      { status: 200 }
-    )
+    const response: RevealNoteResponse = {
+      content,
+      views: updated.views,
+      createdAt: note.createdAt,
+      expiresAt: note.expiresAt,
+      burned: false,
+      attachment: attachmentMeta,
+      mediaToken,
+    }
+    return NextResponse.json(response, { status: 200 })
   } catch (err) {
-    // Small artificial delay on wrong key too, independent of the lockout
-    // counter above, so single-attempt timing can't reveal correctness fast.
     await sleep(300 + Math.floor(Math.random() * 300))
     return NextResponse.json(
       { error: 'Incorrect private key.', requiresKey: true },
@@ -160,7 +175,6 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
   }
 }
 
-// PATCH: owner-only expiration extension.
 export async function PATCH(req: NextRequest, { params }: { params: { slug: string } }) {
   const note = await loadNote(params.slug)
   if (!note || note.deleted || isExpired(note)) {
@@ -194,8 +208,6 @@ export async function PATCH(req: NextRequest, { params }: { params: { slug: stri
   return NextResponse.json(response, { status: 200 })
 }
 
-// DELETE: owner-only manual destruction. Requires ?token= matching the
-// secret ownerToken issued at creation time.
 export async function DELETE(req: NextRequest, { params }: { params: { slug: string } }) {
   const note = await loadNote(params.slug)
 
@@ -209,6 +221,9 @@ export async function DELETE(req: NextRequest, { params }: { params: { slug: str
   }
 
   await redis.del(noteKey(params.slug))
+  if (note.attachment) {
+    await deleteBlobSafely(note.attachment.blobPathname)
+  }
 
   return NextResponse.json({ deleted: true }, { status: 200 })
 }

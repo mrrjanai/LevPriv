@@ -1,4 +1,4 @@
-'use client'
+﻿'use client'
 
 import { useEffect, useRef, useState } from 'react'
 import QRCode from 'qrcode'
@@ -9,7 +9,9 @@ import { CopyButton } from '@/components/CopyButton'
 import { ShareButton } from '@/components/ShareButton'
 import { SuccessTick } from '@/components/icons/SuccessTick'
 import { LogoMark } from '@/components/LogoMark'
+import { AttachmentComposer } from '@/components/AttachmentComposer'
 import { KeyRound } from 'lucide-react'
+import type { AttachmentInput } from '@/lib/types'
 
 type CustomUnit = 'minutes' | 'hours'
 
@@ -17,6 +19,7 @@ export default function HomePage() {
   const [content, setContent] = useState('')
   const [privateKey, setPrivateKey] = useState('')
   const [burnAfterReading, setBurnAfterReading] = useState(false)
+  const [attachment, setAttachment] = useState<AttachmentInput | null>(null)
   const [selectedSeconds, setSelectedSeconds] = useState<number>(DURATION_PRESETS[1].seconds)
   const [useCustom, setUseCustom] = useState(false)
   const [customValue, setCustomValue] = useState(30)
@@ -55,8 +58,8 @@ export default function HomePage() {
     e.preventDefault()
     setError(null)
 
-    if (content.trim().length === 0) {
-      setError('Write something before sending it into the void.')
+    if (content.trim().length === 0 && !attachment) {
+      setError('Write something or attach a file before sending it into the void.')
       return
     }
 
@@ -70,6 +73,7 @@ export default function HomePage() {
           durationSeconds,
           privateKey: privateKey.length > 0 ? privateKey : undefined,
           burnAfterReading,
+          attachment: attachment ?? undefined,
           website,
           formRenderedAt: formRenderedAtRef.current,
         }),
@@ -96,6 +100,7 @@ export default function HomePage() {
           createdAt: Date.now(),
           expiresAt: created.expiresAt,
           hasPrivateKey: created.hasPrivateKey,
+          hasAttachment: created.hasAttachment,
         })
         localStorage.setItem('levpriv_notes', JSON.stringify(stored.slice(0, 50)))
       } catch {
@@ -119,6 +124,7 @@ export default function HomePage() {
     setContent('')
     setPrivateKey('')
     setBurnAfterReading(false)
+    setAttachment(null)
     setResult(null)
     setError(null)
     setUseCustom(false)
@@ -231,7 +237,7 @@ export default function HomePage() {
       <form onSubmit={handleSubmit} className="w-full max-w-lg">
         <div className="mb-10">
           <div className="flex items-center gap-2.5">
-            <LogoMark size={62} />
+            <LogoMark size={42} />
             <h1 className="font-display text-3xl tracking-tight">LevPriv</h1>
           </div>
           <p className="text-base-muted mt-2 text-sm">
@@ -239,19 +245,23 @@ export default function HomePage() {
           </p>
         </div>
 
-        <Field label="Note">
+        <Field label="Note (optional if you attach something below)">
           <textarea
             value={content}
             onChange={(e) => setContent(e.target.value)}
             onKeyDown={handleKeyDown}
             maxLength={MAX_CONTENT_LENGTH}
-            rows={10}
+            rows={8}
             placeholder="Type your note here... (Ctrl+Enter to send)"
             className="w-full resize-none bg-base-near border border-base-border rounded-md px-4 py-3 text-sm leading-relaxed placeholder:text-base-muted focus:border-base-mid transition-colors"
           />
           <div className={`text-right text-xs mt-1 transition-colors ${charCountColor}`}>
             {content.length} / {MAX_CONTENT_LENGTH}
           </div>
+        </Field>
+
+        <Field label="Record or attach (audio, video, photo, or file — 25MB max)">
+          <AttachmentComposer onAttached={setAttachment} disabled={loading} />
         </Field>
 
         <Field label="Expires after">

@@ -1,11 +1,32 @@
+import type { MediaKind } from './media'
+
+export interface AttachmentInput {
+  blobUrl: string
+  blobPathname: string
+  mimeType: string
+  fileName: string
+  sizeBytes: number
+}
+
+export interface StoredAttachment extends AttachmentInput {
+  kind: MediaKind
+}
+
+// What the client is allowed to see about an attachment - never blobUrl or
+// blobPathname, which would let someone bypass our access gating entirely.
+export interface PublicAttachmentMeta {
+  kind: MediaKind
+  mimeType: string
+  fileName: string
+  sizeBytes: number
+}
+
 export interface CreateNoteRequest {
   content: string
   durationSeconds: number
   privateKey?: string
   burnAfterReading?: boolean
-  // Honeypot + timing-trap fields for lightweight bot detection.
-  // `website` should always be empty (real users never see/fill this field).
-  // `formRenderedAt` is a client timestamp (ms) checked against arrival time.
+  attachment?: AttachmentInput
   website?: string
   formRenderedAt?: number
 }
@@ -17,19 +38,21 @@ export interface CreateNoteResponse {
   manageUrl: string
   expiresAt: number
   hasPrivateKey: boolean
+  hasAttachment: boolean
 }
 
 export interface StoredNote {
   slug: string
-  cipherText: string // base64
-  iv: string // base64
-  authTag: string // base64
-  salt: string | null // base64, present only if user-supplied private key was used
+  cipherText: string
+  iv: string
+  authTag: string
+  salt: string | null
   hasPrivateKey: boolean
   burnAfterReading: boolean
-  ownerTokenHash: string // sha256 hex
-  createdAt: number // epoch ms
-  expiresAt: number // epoch ms
+  attachment: StoredAttachment | null
+  ownerTokenHash: string
+  createdAt: number
+  expiresAt: number
   views: number
   deleted: boolean
 }
@@ -40,9 +63,20 @@ export interface NotePublicMeta {
   deleted: boolean
   hasPrivateKey: boolean
   burnAfterReading?: boolean
+  attachment?: PublicAttachmentMeta | null
   expiresAt?: number
   createdAt?: number
   views?: number
+}
+
+export interface RevealNoteResponse {
+  content: string
+  views: number
+  createdAt: number
+  expiresAt: number
+  burned: boolean
+  attachment: PublicAttachmentMeta | null
+  mediaToken: string | null
 }
 
 export interface ExtendNoteRequest {
@@ -53,12 +87,11 @@ export interface ExtendNoteResponse {
   expiresAt: number
 }
 
-// A note record kept client-side in localStorage so the no-login dashboard
-// can list notes created from this browser.
 export interface LocalNoteRecord {
   slug: string
   ownerToken: string
   createdAt: number
   expiresAt: number
   hasPrivateKey: boolean
+  hasAttachment?: boolean
 }

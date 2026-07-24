@@ -3,11 +3,12 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams } from 'next/navigation'
 import { formatRemaining } from '@/lib/duration'
-import type { NotePublicMeta } from '@/lib/types'
+import type { NotePublicMeta, PublicAttachmentMeta } from '@/lib/types'
 import { PasswordField } from '@/components/PasswordField'
 import { CopyButton } from '@/components/CopyButton'
 import { DestructIcon } from '@/components/icons/DestructIcon'
 import { PadlockIcon } from '@/components/icons/PadlockIcon'
+import { AttachmentPlayer } from '@/components/AttachmentPlayer'
 import { AlertTriangle } from 'lucide-react'
 
 type ViewState = 'loading' | 'need-key' | 'revealed' | 'gone' | 'error'
@@ -27,6 +28,8 @@ export default function NoteViewerPage() {
   const [remainingMs, setRemainingMs] = useState<number | null>(null)
   const [views, setViews] = useState<number | null>(null)
   const [burned, setBurned] = useState(false)
+  const [attachment, setAttachment] = useState<PublicAttachmentMeta | null>(null)
+  const [mediaToken, setMediaToken] = useState<string | null>(null)
 
   const fetchMeta = useCallback(async () => {
     const res = await fetch(`/api/notes/${slug}`)
@@ -48,7 +51,6 @@ export default function NoteViewerPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug])
 
-  // Live countdown, ticking every second, based on meta.expiresAt
   useEffect(() => {
     if (!meta?.expiresAt) return
     const tick = () => {
@@ -90,6 +92,8 @@ export default function NoteViewerPage() {
       setContent(data.content)
       setViews(data.views)
       setBurned(Boolean(data.burned))
+      setAttachment(data.attachment ?? null)
+      setMediaToken(data.mediaToken ?? null)
       setState('revealed')
     } catch {
       setState('error')
@@ -119,7 +123,7 @@ export default function NoteViewerPage() {
             <p className="text-base-muted text-sm">
               It was either deleted by its creator or its time simply ran out.
             </p>
-            <a
+            
               href="/"
               className="inline-block mt-8 border border-base-border rounded-md px-5 py-2.5 text-sm hover:border-base-mid transition-colors"
             >
@@ -169,13 +173,26 @@ export default function NoteViewerPage() {
               </div>
             )}
 
-            <div className="bg-base-near border border-base-border rounded-md px-5 py-4 whitespace-pre-wrap break-words text-sm leading-relaxed">
-              {content}
-            </div>
+            {attachment && mediaToken && (
+              <div className="mb-4">
+                <AttachmentPlayer
+                  attachment={attachment}
+                  mediaSrc={`/api/notes/${slug}/media?vt=${encodeURIComponent(mediaToken)}`}
+                />
+              </div>
+            )}
 
-            <div className="mt-4">
-              <CopyButton text={content} label="Copy all" copiedLabel="Copied all" variant="outline" className="w-full justify-center" />
-            </div>
+            {content && (
+              <div className="bg-base-near border border-base-border rounded-md px-5 py-4 whitespace-pre-wrap break-words text-sm leading-relaxed">
+                {content}
+              </div>
+            )}
+
+            {content && (
+              <div className="mt-4">
+                <CopyButton text={content} label="Copy all" copiedLabel="Copied all" variant="outline" className="w-full justify-center" />
+              </div>
+            )}
 
             <p className="text-xs text-base-muted mt-4 text-center">
               {burned
