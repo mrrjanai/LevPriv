@@ -58,7 +58,8 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
           videoRef.current.srcObject = stream
         }
         setReady(true)
-      } catch {
+      } catch (err) {
+        console.error('Camera error:', err)
         setError('Could not access your camera. Check permissions and try again.')
       }
     }

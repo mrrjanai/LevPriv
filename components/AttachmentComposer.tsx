@@ -132,7 +132,8 @@ export function AttachmentComposer({ onAttached, disabled }: AttachmentComposerP
           return s + 1
         })
       }, 1000)
-    } catch {
+    } catch (err) {
+      console.error('Mic error:', err)
       setStatus('error')
       setErrorMsg('Could not access your microphone. Check permissions and try again.')
     }
