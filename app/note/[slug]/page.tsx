@@ -123,7 +123,7 @@ export default function NoteViewerPage() {
             <p className="text-base-muted text-sm">
               It was either deleted by its creator or its time simply ran out.
             </p>
-            
+            <a
               href="/"
               className="inline-block mt-8 border border-base-border rounded-md px-5 py-2.5 text-sm hover:border-base-mid transition-colors"
             >
