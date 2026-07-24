@@ -74,7 +74,7 @@ export function AttachmentPlayer({ attachment, mediaSrc }: AttachmentPlayerProps
           <p className="text-xs text-base-muted">{formatBytes(attachment.sizeBytes)}</p>
         </div>
       </div>
-      
+      <a
         href={mediaSrc}
         target="_blank"
         rel="noopener noreferrer"
