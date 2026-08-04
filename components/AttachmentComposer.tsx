@@ -41,6 +41,7 @@ export function AttachmentComposer({ onAttached, disabled }: AttachmentComposerP
   const [sizeBytes, setSizeBytes] = useState(0)
   const [errorMsg, setErrorMsg] = useState('')
   const [showCamera, setShowCamera] = useState(false)
+  const [recordSeconds, setRecordSeconds] = useState(0)
   const [uploadPercent, setUploadPercent] = useState(0)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
