@@ -46,7 +46,7 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
     async function startCamera() {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          video: true,
+          video: { width: { ideal: 1280 }, height: { ideal: 720 } },
           audio: mode === 'video',
         })
         if (cancelled) {
@@ -101,7 +101,10 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
   function handleStartRecording() {
     if (!streamRef.current) return
     const mimeType = pickSupportedMimeType(VIDEO_MIME_CANDIDATES)
-    const recorder = new MediaRecorder(streamRef.current, { mimeType })
+    const recorder = new MediaRecorder(streamRef.current, {
+      mimeType,
+      videoBitsPerSecond: 1_500_000, // ~1.5 Mbps - solid quality at a fraction of default size
+    })
     chunksRef.current = []
 
     recorder.ondataavailable = (e) => {

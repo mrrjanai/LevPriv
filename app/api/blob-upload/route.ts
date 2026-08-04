@@ -6,6 +6,7 @@ export const runtime = 'nodejs'
 
 export async function POST(request: Request) {
   const body = (await request.json()) as HandleUploadBody
+  console.log('Token prefix in use:', process.env.BLOB_READ_WRITE_TOKEN?.slice(0, 20))
 
   try {
     const jsonResponse = await handleUpload({
@@ -28,6 +29,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json(jsonResponse)
   } catch (error) {
+    console.error('Blob upload token error:', error)
     return NextResponse.json({ error: (error as Error).message }, { status: 400 })
   }
 }

@@ -41,7 +41,7 @@ export function AttachmentComposer({ onAttached, disabled }: AttachmentComposerP
   const [sizeBytes, setSizeBytes] = useState(0)
   const [errorMsg, setErrorMsg] = useState('')
   const [showCamera, setShowCamera] = useState(false)
-  const [recordSeconds, setRecordSeconds] = useState(0)
+  const [uploadPercent, setUploadPercent] = useState(0)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -77,7 +77,7 @@ export function AttachmentComposer({ onAttached, disabled }: AttachmentComposerP
     setStatus('uploading')
 
     try {
-      const attachment = await uploadAttachment(fileOrBlob, name, mimeType)
+      const attachment = await uploadAttachment(fileOrBlob, name, mimeType, setUploadPercent)
       setStatus('ready')
       onAttached(attachment)
     } catch {
@@ -208,7 +208,7 @@ export function AttachmentComposer({ onAttached, disabled }: AttachmentComposerP
           <div className="min-w-0 flex-1">
             <p className="text-sm text-base-white truncate">{fileName}</p>
             <p className="text-xs text-base-muted">
-              {status === 'uploading' ? 'Uploading…' : formatBytes(sizeBytes)}
+              {status === 'uploading' ? `Uploading… ${uploadPercent}%` : formatBytes(sizeBytes)}
             </p>
           </div>
           {status === 'uploading' ? (

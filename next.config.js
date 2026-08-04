@@ -16,8 +16,8 @@ const nextConfig = {
           {
             key: 'Content-Security-Policy',
             value: isDev
-              ? "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws:;"
-              : "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self';",
+             ? "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws: https://blob.vercel-storage.com https://*.blob.vercel-storage.com;"
+             : "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://blob.vercel-storage.com https://*.blob.vercel-storage.com;",
           },
         ],
       },
