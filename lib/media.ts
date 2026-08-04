@@ -4,7 +4,13 @@ export type MediaKind = 'audio' | 'video' | 'image' | 'file'
 // typical documents, while staying well within Vercel's request limits when
 // uploads go directly client-to-Blob (bypassing our own serverless function
 // body-size limits entirely).
-export const MAX_MEDIA_BYTES = 25 * 1024 * 1024
+// 4MB ceiling - Vercel's serverless functions cap request bodies at ~4.5MB
+// on the Hobby plan. We proxy uploads through our own server (see
+// app/api/attachments/upload/route.ts) rather than direct client-to-Blob,
+// to work around a currently unresolved CORS bug in Vercel's own direct
+// client-upload flow. That tradeoff means a smaller cap than the 25MB we'd
+// get with true client uploads, but it actually works today.
+export const MAX_MEDIA_BYTES = 4 * 1024 * 1024
 
 export const ALLOWED_MEDIA_TYPES: Record<MediaKind, string[]> = {
   image: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'],

@@ -260,7 +260,7 @@ export default function HomePage() {
           </div>
         </Field>
 
-        <Field label="Record or attach (audio, video, photo, or file — 25MB max)">
+        <Field label="Record or attach (audio, video, photo, or file — 4MB max)">
           <AttachmentComposer onAttached={setAttachment} disabled={loading} />
         </Field>
 

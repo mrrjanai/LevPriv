@@ -90,8 +90,8 @@ export async function POST(req: NextRequest) {
       }
       if (sizeBytes > MAX_MEDIA_BYTES) {
         await deleteBlobSafely(blobPathname)
-        return NextResponse.json(
-          { error: 'Attachment is too large (25MB limit).' },
+       return NextResponse.json(
+          { error: `Attachment is too large (${Math.round(MAX_MEDIA_BYTES / (1024 * 1024))}MB limit).` },
           { status: 400 }
         )
       }

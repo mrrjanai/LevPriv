@@ -66,9 +66,12 @@ export function AttachmentComposer({ onAttached, disabled }: AttachmentComposerP
     }
     if (fileOrBlob.size > MAX_MEDIA_BYTES) {
       setStatus('error')
-      setErrorMsg(`File is too large (25MB limit, this is ${formatBytes(fileOrBlob.size)}).`)
+      setErrorMsg(
+        `File is too large (${formatBytes(MAX_MEDIA_BYTES)} limit, this is ${formatBytes(fileOrBlob.size)}).`
+      )
       return
     }
+
 
     const detectedKind = detectMediaKind(mimeType)
     setKind(detectedKind)
@@ -80,9 +83,10 @@ export function AttachmentComposer({ onAttached, disabled }: AttachmentComposerP
       const attachment = await uploadAttachment(fileOrBlob, name, mimeType, setUploadPercent)
       setStatus('ready')
       onAttached(attachment)
-    } catch {
+    } catch (err) {
+      console.error('Upload error:', err)
       setStatus('error')
-      setErrorMsg('Upload failed. Please try again.')
+      setErrorMsg(err instanceof Error ? err.message : 'Upload failed. Please try again.')
       onAttached(null)
     }
   }
