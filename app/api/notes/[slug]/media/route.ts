@@ -25,18 +25,22 @@ export async function GET(req: NextRequest, { params }: { params: { slug: string
   }
 
   const result = await get(note.attachment.blobPathname, { access: 'private' })
-  if (!result) {
+  if (!result || result.statusCode !== 200 || !result.stream) {
     return NextResponse.json({ error: 'Media unavailable.' }, { status: 404 })
   }
 
   const headers = new Headers()
-  headers.set('Content-Type', note.attachment.mimeType)
+  headers.set('Content-Type', result.blob.contentType || note.attachment.mimeType)
+  if (result.blob.size) {
+    headers.set('Content-Length', String(result.blob.size))
+  }
   headers.set(
     'Content-Disposition',
     `inline; filename="${encodeURIComponent(note.attachment.fileName)}"`
   )
-  headers.set('Cache-Control', 'no-store')
+  headers.set('Cache-Control', 'private, no-store')
   headers.set('X-Content-Type-Options', 'nosniff')
+  headers.set('Accept-Ranges', 'bytes')
 
   return new NextResponse(result.stream, {
     status: 200,

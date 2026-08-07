@@ -98,3 +98,7 @@ export function sha256Hex(value: string): string {
 export function generateOwnerToken(): string {
   return crypto.randomBytes(24).toString('base64url')
 }
+
+export function generateViewId(): string {
+  return crypto.randomBytes(4).toString('hex')
+}

@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
-import { X, Camera as CameraIcon, Video as VideoIcon, Circle, Square } from 'lucide-react'
+import { useEffect, useRef, useState, useCallback } from 'react'
+import { X, Camera as CameraIcon, Video as VideoIcon, Circle, Square, SwitchCamera } from 'lucide-react'
 
 interface CameraCaptureProps {
   onCapture: (file: Blob, fileName: string, mimeType: string) => void
@@ -9,6 +9,7 @@ interface CameraCaptureProps {
 }
 
 type Mode = 'photo' | 'video'
+type Facing = 'user' | 'environment'
 
 const VIDEO_MIME_CANDIDATES = [
   'video/webm;codecs=vp9,opus',
@@ -25,7 +26,7 @@ function pickSupportedMimeType(candidates: string[]): string {
   return candidates[candidates.length - 1]
 }
 
-const MAX_VIDEO_SECONDS = 40 // 2 minute cap keeps clips well under the 25MB ceiling
+const MAX_VIDEO_SECONDS = 40 // keeps clips comfortably under the 4MB ceiling
 
 export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -35,47 +36,59 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const [mode, setMode] = useState<Mode>('photo')
+  const [facing, setFacing] = useState<Facing>('user')
+  const [canFlip, setCanFlip] = useState(false)
   const [recording, setRecording] = useState(false)
   const [seconds, setSeconds] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const [ready, setReady] = useState(false)
 
-  useEffect(() => {
-    let cancelled = false
-
-    async function startCamera() {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: { ideal: 1280 }, height: { ideal: 720 } },
-          audio: mode === 'video',
-        })
-        if (cancelled) {
-          stream.getTracks().forEach((t) => t.stop())
-          return
-        }
-        streamRef.current = stream
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream
-        }
-        setReady(true)
-      } catch (err) {
-        console.error('Camera error:', err)
-        setError('Could not access your camera. Check permissions and try again.')
-      }
-    }
-
-    startCamera()
-
-    return () => {
-      cancelled = true
-      streamRef.current?.getTracks().forEach((t) => t.stop())
-      if (timerRef.current) clearInterval(timerRef.current)
-    }
-  }, [mode])
-
-  function stopStream() {
+  const stopStream = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop())
     streamRef.current = null
+  }, [])
+
+  const startCamera = useCallback(async () => {
+    setError(null)
+    setReady(false)
+    stopStream()
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: mode === 'video',
+      })
+      streamRef.current = stream
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+      }
+      setReady(true)
+
+      // Only show the flip button if the device actually has more than one
+      // camera - no point offering it on a laptop with a single webcam.
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices()
+        const cameraCount = devices.filter((d) => d.kind === 'videoinput').length
+        setCanFlip(cameraCount > 1)
+      } catch {
+        setCanFlip(false)
+      }
+    } catch {
+      setError('Could not access your camera. Check permissions and try again.')
+    }
+  }, [facing, mode, stopStream])
+
+  useEffect(() => {
+    startCamera()
+    return () => {
+      stopStream()
+      if (timerRef.current) clearInterval(timerRef.current)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [facing, mode])
+
+  function handleFlip() {
+    if (recording) return
+    setFacing((f) => (f === 'user' ? 'environment' : 'user'))
   }
 
   function handleTakePhoto() {
@@ -149,7 +162,8 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
             <button
               type="button"
               onClick={() => !recording && setMode('photo')}
-              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border transition-colors ${
+              disabled={recording}
+              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border transition-colors disabled:opacity-40 ${
                 mode === 'photo'
                   ? 'bg-base-white text-base-black border-base-white'
                   : 'border-base-border text-base-muted'
@@ -160,7 +174,8 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
             <button
               type="button"
               onClick={() => !recording && setMode('video')}
-              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border transition-colors ${
+              disabled={recording}
+              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md border transition-colors disabled:opacity-40 ${
                 mode === 'video'
                   ? 'bg-base-white text-base-black border-base-white'
                   : 'border-base-border text-base-muted'
@@ -185,8 +200,28 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
               {error}
             </div>
           ) : (
-            <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="w-full h-full object-cover"
+              style={{ transform: facing === 'user' ? 'scaleX(-1)' : undefined }}
+            />
           )}
+
+          {canFlip && !error && (
+            <button
+              type="button"
+              onClick={handleFlip}
+              disabled={recording}
+              aria-label="Switch camera"
+              className="absolute top-3 right-3 bg-base-black/60 rounded-full p-2 text-base-white hover:bg-base-black/80 transition-colors disabled:opacity-40"
+            >
+              <SwitchCamera size={16} />
+            </button>
+          )}
+
           {mode === 'video' && recording && (
             <div className="absolute top-3 left-3 flex items-center gap-1.5 bg-base-black/70 rounded-full px-2.5 py-1 text-xs">
               <span className="w-2 h-2 rounded-full bg-white animate-pulse" />

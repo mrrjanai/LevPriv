@@ -69,6 +69,12 @@ export interface NotePublicMeta {
   views?: number
 }
 
+export interface ViewWatermark {
+  ip: string
+  viewedAt: number
+  viewId: string
+}
+
 export interface RevealNoteResponse {
   content: string
   views: number
@@ -77,6 +83,7 @@ export interface RevealNoteResponse {
   burned: boolean
   attachment: PublicAttachmentMeta | null
   mediaToken: string | null
+  watermark: ViewWatermark
 }
 
 export interface ExtendNoteRequest {

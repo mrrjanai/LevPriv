@@ -5,6 +5,7 @@ import { viewLimiter, wrongKeyLimiter, getClientIp } from '@/lib/ratelimit'
 import { MAX_DURATION_SECONDS } from '@/lib/duration'
 import { issueMediaToken } from '@/lib/mediaToken'
 import { deleteBlobSafely } from '@/lib/blob'
+import { generateViewId } from '@/lib/crypto'
 import type {
   StoredNote,
   NotePublicMeta,
@@ -136,7 +137,7 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
 
     const mediaToken = note.attachment ? issueMediaToken(params.slug) : null
     const attachmentMeta = toPublicAttachment(note)
-
+    const watermark = { ip, viewedAt: Date.now(), viewId: generateViewId() }
     if (note.burnAfterReading) {
       await redis.del(noteKey(params.slug))
 
@@ -148,6 +149,7 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
         burned: true,
         attachment: attachmentMeta,
         mediaToken,
+        watermark,
       }
       return NextResponse.json(response, { status: 200 })
     }
@@ -164,6 +166,7 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
       burned: false,
       attachment: attachmentMeta,
       mediaToken,
+      watermark,
     }
     return NextResponse.json(response, { status: 200 })
   } catch (err) {
