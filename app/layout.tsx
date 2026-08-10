@@ -4,6 +4,7 @@ import './globals.css'
 import { Footer } from '@/components/Footer'
 import { Navbar } from '@/components/Navbar'
 import { Analytics } from '@vercel/analytics/next'
+import { SpeedInsights } from '@vercel/speed-insights/next'
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
 const fraunces = Fraunces({
@@ -32,6 +33,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         </div>
         <Footer />
         <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   )
