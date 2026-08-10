@@ -3,6 +3,7 @@ import { Inter, Fraunces } from 'next/font/google'
 import './globals.css'
 import { Footer } from '@/components/Footer'
 import { Navbar } from '@/components/Navbar'
+import { Analytics } from '@vercel/analytics/next'
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
 const fraunces = Fraunces({
@@ -30,6 +31,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="flex-1 flex flex-col">{children}</div>
         </div>
         <Footer />
+        <Analytics />
       </body>
     </html>
   )
