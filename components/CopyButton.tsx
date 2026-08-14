@@ -26,7 +26,7 @@ export function CopyButton({
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     } catch {
-      // Clipboard API unavailable — fail silently, button just won't confirm.
+      // Clipboard API unavailable â€” fail silently, button just won't confirm.
     }
   }
 

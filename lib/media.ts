@@ -38,7 +38,11 @@ export function detectMediaKind(mimeType: string): MediaKind {
 }
 
 export function isAllowedMediaType(mimeType: string): boolean {
-  return ALL_ALLOWED_MEDIA_TYPES.includes(mimeType)
+  // Recorded audio/video comes tagged with codec info (e.g. "audio/webm;codecs=opus"),
+  // but our allow-list only has the base type. Compare just the base type so
+  // codec-qualified MIME types from MediaRecorder are correctly recognized.
+  const baseType = mimeType.split(';')[0].trim()
+  return ALL_ALLOWED_MEDIA_TYPES.includes(baseType)
 }
 
 export function formatBytes(bytes: number): string {

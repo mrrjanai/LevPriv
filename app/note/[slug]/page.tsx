@@ -1,201 +1,83 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
-import { useParams } from 'next/navigation'
-import { formatRemaining } from '@/lib/duration'
-import type { NotePublicMeta, PublicAttachmentMeta } from '@/lib/types'
-import { PasswordField } from '@/components/PasswordField'
-import { DestructIcon } from '@/components/icons/DestructIcon'
-import { PadlockIcon } from '@/components/icons/PadlockIcon'
-import { AttachmentPlayer } from '@/components/AttachmentPlayer'
-import { ProtectedText } from '@/components/ProtectedText'
-import { AlertTriangle } from 'lucide-react'
-import type { ViewWatermark } from '@/lib/types'
+import { useState } from 'react'
+import { ChevronDown } from 'lucide-react'
 
-type ViewState = 'loading' | 'need-key' | 'revealed' | 'gone' | 'error'
+const FAQS: { question: string; answer: string }[] = [
+  {
+    question: 'Do you store my notes forever?',
+    answer:
+      'No. Every note is stored with an expiration you choose at creation â€” anywhere from a few minutes to several days. Once that time passes, or once you delete it manually, it is permanently removed from the database. There is no backup or archive copy kept anywhere.',
+  },
+  {
+    question: 'What happens if I lose the private key on a protected note?',
+    answer:
+      'The note becomes unrecoverable. When you set a private key, the note is encrypted using a key derived from that passphrase, and the server never stores it. This is intentional â€” it means nobody, including us, can read a protected note without the key you set.',
+  },
+  {
+    question: 'Do I need an account to use LevPriv?',
+    answer:
+      'No. There are no accounts, no sign-ups, and no passwords to remember for the service itself. Ownership of a note is handled through a private management link generated when you create it â€” keep that link if you want to check its status or delete it early.',
+  },
+  {
+    question: 'What is "delete after being read once"?',
+    answer:
+      'It is an option that overrides the timer entirely. If enabled, the note is permanently destroyed the moment someone successfully opens it â€” even if its original countdown had days left. Useful for anything meant to be seen exactly once.',
+  },
+  {
+    question: 'Can I extend a note after creating it?',
+    answer:
+      'Yes, from the management link generated when you created the note. You can add 10 minutes, 1 hour, or 24 hours to its remaining lifespan at any time before it expires.',
+  },
+  {
+    question: 'Is my note visible to anyone besides the person I share the link with?',
+    answer:
+      'Only whoever holds the link can open a note, and if you set a private key, they need that too. Content is encrypted before storage, so even direct access to the underlying database would not reveal readable note content.',
+  },
+  {
+    question: 'What is the "My notes" dashboard, and does it require login?',
+    answer:
+      'It does not require login. It reads a list kept in your browser\u2019s local storage of notes you have created on this device, so you can check their status or delete them without digging up individual links. Clearing your browser data clears this list, but it does not affect the notes themselves.',
+  },
+]
 
-const EXPIRY_WARNING_MS = 60_000
-
-export default function NoteViewerPage() {
-  const params = useParams<{ slug: string }>()
-  const slug = params.slug
-
-  const [state, setState] = useState<ViewState>('loading')
-  const [meta, setMeta] = useState<NotePublicMeta | null>(null)
-  const [content, setContent] = useState('')
-  const [privateKey, setPrivateKey] = useState('')
-  const [errorMsg, setErrorMsg] = useState('')
-  const [remaining, setRemaining] = useState('')
-  const [remainingMs, setRemainingMs] = useState<number | null>(null)
-  const [views, setViews] = useState<number | null>(null)
-  const [burned, setBurned] = useState(false)
-  const [attachment, setAttachment] = useState<PublicAttachmentMeta | null>(null)
-  const [mediaToken, setMediaToken] = useState<string | null>(null)
-  const [watermark, setWatermark] = useState<ViewWatermark | null>(null)
-
-  const fetchMeta = useCallback(async () => {
-    const res = await fetch(`/api/notes/${slug}`)
-    const data = (await res.json()) as NotePublicMeta
-    setMeta(data)
-    if (!data.exists) {
-      setState('gone')
-    } else {
-      setState((prev) => (prev === 'loading' ? (data.hasPrivateKey ? 'need-key' : 'loading') : prev))
-      if (!data.hasPrivateKey && state !== 'revealed') {
-        reveal(undefined)
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slug])
-
-  useEffect(() => {
-    fetchMeta()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slug])
-
-  useEffect(() => {
-    if (!meta?.expiresAt) return
-    const tick = () => {
-      const ms = meta.expiresAt! - Date.now()
-      if (ms <= 0) {
-        setRemaining('0s')
-        setRemainingMs(0)
-        setState('gone')
-        return
-      }
-      setRemaining(formatRemaining(ms))
-      setRemainingMs(ms)
-    }
-    tick()
-    const interval = setInterval(tick, 1000)
-    return () => clearInterval(interval)
-  }, [meta?.expiresAt])
-
-  async function reveal(key: string | undefined) {
-    setErrorMsg('')
-    try {
-      const res = await fetch(`/api/notes/${slug}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ privateKey: key }),
-      })
-      const data = await res.json()
-
-      if (!res.ok) {
-        if (data.requiresKey) {
-          setState('need-key')
-          if (key) setErrorMsg(data.error || 'Incorrect private key. Try again.')
-        } else {
-          setState('gone')
-        }
-        return
-      }
-
-      setContent(data.content)
-      setViews(data.views)
-      setBurned(Boolean(data.burned))
-      setAttachment(data.attachment ?? null)
-      setMediaToken(data.mediaToken ?? null)
-      setWatermark(data.watermark ?? null)
-      setState('revealed')
-    } catch {
-      setState('error')
-      setErrorMsg('Network error. Please refresh and try again.')
-    }
-  }
-
-  function handleKeySubmit(e: React.FormEvent) {
-    e.preventDefault()
-    reveal(privateKey)
-  }
-
-  const showExpiryWarning =
-    state === 'revealed' && !burned && remainingMs !== null && remainingMs > 0 && remainingMs <= EXPIRY_WARNING_MS
+export default function FaqPage() {
+  const [openIndex, setOpenIndex] = useState<number | null>(0)
 
   return (
-    <main className="flex-1 flex items-center justify-center px-6 py-16">
-      <div className="w-full max-w-lg animate-fadeIn">
-        {state === 'loading' && (
-          <div className="text-center text-base-muted text-sm">Loading note…</div>
-        )}
+    <main className="flex-1 px-6 py-16">
+      <div className="w-full max-w-2xl mx-auto animate-fadeIn">
+        <h1 className="font-display text-3xl tracking-tight mb-3">Frequently asked questions</h1>
+        <p className="text-base-muted text-sm mb-10">
+          Everything worth knowing before you share something private.
+        </p>
 
-        {state === 'gone' && (
-          <div className="text-center">
-            <DestructIcon />
-            <h1 className="text-xl font-medium mb-2 mt-4">This note has self-destructed</h1>
-            <p className="text-base-muted text-sm">
-              It was either deleted by its creator or its time simply ran out.
-            </p>
-            <a
-              href="/"
-              className="inline-block mt-8 border border-base-border rounded-md px-5 py-2.5 text-sm hover:border-base-mid transition-colors"
-            >
-              Create your own note
-            </a>
-          </div>
-        )}
-
-        {state === 'error' && (
-          <div className="text-center">
-            <h1 className="text-xl font-medium mb-2">Something went wrong</h1>
-            <p className="text-base-muted text-sm">{errorMsg}</p>
-          </div>
-        )}
-
-        {state === 'need-key' && (
-          <form onSubmit={handleKeySubmit} className="text-center">
-            <PadlockIcon />
-            <h1 className="text-xl font-medium mb-2 mt-4">This note is protected</h1>
-            <p className="text-base-muted text-sm mb-6">
-              Enter the private key to view its content.
-            </p>
-            <div className="mb-3 text-left">
-              <PasswordField value={privateKey} onChange={setPrivateKey} placeholder="Private key" autoFocus />
-            </div>
-            {errorMsg && <p className="text-sm text-base-white mb-3">{errorMsg}</p>}
-            <button
-              type="submit"
-              className="w-full bg-base-white text-base-black rounded-md py-3 text-sm font-medium hover:bg-base-muted transition-colors"
-            >
-              Unlock note
-            </button>
-          </form>
-        )}
-
-        {state === 'revealed' && (
-          <div>
-            <div className="flex items-center justify-between mb-4 text-xs text-base-muted">
-              <span>{burned ? 'Destroyed after this view' : `Self-destructs in ${remaining}`}</span>
-              {views !== null && <span>{views} view{views === 1 ? '' : 's'}</span>}
-            </div>
-
-            {showExpiryWarning && (
-              <div className="flex items-center gap-2 mb-3 bg-base-near border border-base-border rounded-md px-3 py-2.5 text-xs text-base-white">
-                <AlertTriangle size={14} className="shrink-0" />
-                This note will disappear any second — copy anything you need now.
+        <div className="border-t border-base-border">
+          {FAQS.map((item, index) => {
+            const isOpen = openIndex === index
+            return (
+              <div key={item.question} className="border-b border-base-border">
+                <button
+                  onClick={() => setOpenIndex(isOpen ? null : index)}
+                  className="w-full flex items-center justify-between gap-4 py-5 text-left"
+                >
+                  <span className="text-sm text-base-white">{item.question}</span>
+                  <ChevronDown
+                    size={16}
+                    className={`shrink-0 text-base-muted transition-transform duration-200 ${
+                      isOpen ? 'rotate-180' : ''
+                    }`}
+                  />
+                </button>
+                {isOpen && (
+                  <p className="text-sm text-base-muted leading-relaxed pb-5 pr-8 animate-fadeIn">
+                    {item.answer}
+                  </p>
+                )}
               </div>
-            )}
-
-            {attachment && mediaToken && (
-              <div className="mb-4">
-                <AttachmentPlayer
-                  attachment={attachment}
-                  mediaSrc={`/api/notes/${slug}/media?vt=${encodeURIComponent(mediaToken)}`}
-                />
-              </div>
-            )}
-
-            {content && watermark && (
-              <ProtectedText content={content} watermark={watermark} />
-            )}
-
-            <p className="text-xs text-base-muted mt-4 text-center">
-              {burned
-                ? 'This note has now been permanently destroyed. It cannot be viewed again.'
-                : 'This note is not saved anywhere permanent. Copy anything you need now.'}
-            </p>
-          </div>
-        )}
+            )
+          })}
+        </div>
       </div>
     </main>
   )

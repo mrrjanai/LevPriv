@@ -213,7 +213,7 @@ export function AttachmentComposer({ onAttached, disabled }: AttachmentComposerP
           <div className="min-w-0 flex-1">
             <p className="text-sm text-base-white truncate">{fileName}</p>
             <p className="text-xs text-base-muted">
-              {status === 'uploading' ? `Uploading… ${uploadPercent}%` : formatBytes(sizeBytes)}
+              {status === 'uploading' ? `Uploadingâ€¦ ${uploadPercent}%` : formatBytes(sizeBytes)}
             </p>
           </div>
           {status === 'uploading' ? (
