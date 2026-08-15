@@ -1,84 +1,274 @@
 'use client'
 
-import { useState } from 'react'
-import { ChevronDown } from 'lucide-react'
+import { Suspense, useEffect, useState, useCallback } from 'react'
+import { useParams, useSearchParams } from 'next/navigation'
+import { formatRemaining, EXTEND_PRESETS } from '@/lib/duration'
+import type { NotePublicMeta } from '@/lib/types'
+import { Toast } from '@/components/Toast'
+import { useToast } from '@/lib/useToast'
+import { DestructIcon } from '@/components/icons/DestructIcon'
+import { SuccessTick } from '@/components/icons/SuccessTick'
+import { PadlockIcon } from '@/components/icons/PadlockIcon'
 
-const FAQS: { question: string; answer: string }[] = [
-  {
-    question: 'Do you store my notes forever?',
-    answer:
-      'No. Every note is stored with an expiration you choose at creation â€” anywhere from a few minutes to several days. Once that time passes, or once you delete it manually, it is permanently removed from the database. There is no backup or archive copy kept anywhere.',
-  },
-  {
-    question: 'What happens if I lose the private key on a protected note?',
-    answer:
-      'The note becomes unrecoverable. When you set a private key, the note is encrypted using a key derived from that passphrase, and the server never stores it. This is intentional â€” it means nobody, including us, can read a protected note without the key you set.',
-  },
-  {
-    question: 'Do I need an account to use LevPriv?',
-    answer:
-      'No. There are no accounts, no sign-ups, and no passwords to remember for the service itself. Ownership of a note is handled through a private management link generated when you create it â€” keep that link if you want to check its status or delete it early.',
-  },
-  {
-    question: 'What is "delete after being read once"?',
-    answer:
-      'It is an option that overrides the timer entirely. If enabled, the note is permanently destroyed the moment someone successfully opens it â€” even if its original countdown had days left. Useful for anything meant to be seen exactly once.',
-  },
-  {
-    question: 'Can I extend a note after creating it?',
-    answer:
-      'Yes, from the management link generated when you created the note. You can add 10 minutes, 1 hour, or 24 hours to its remaining lifespan at any time before it expires.',
-  },
-  {
-    question: 'Is my note visible to anyone besides the person I share the link with?',
-    answer:
-      'Only whoever holds the link can open a note, and if you set a private key, they need that too. Content is encrypted before storage, so even direct access to the underlying database would not reveal readable note content.',
-  },
-  {
-    question: 'What is the "My notes" dashboard, and does it require login?',
-    answer:
-      'It does not require login. It reads a list kept in your browser\u2019s local storage of notes you have created on this device, so you can check their status or delete them without digging up individual links. Clearing your browser data clears this list, but it does not affect the notes themselves.',
-  },
-]
+type PageState = 'loading' | 'ready' | 'deleted' | 'gone' | 'unauthorized'
 
-export default function FaqPage() {
-  const [openIndex, setOpenIndex] = useState<number | null>(0)
+export default function ManagePage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex-1 flex items-center justify-center px-6 py-16">
+          <div className="text-center text-base-muted text-sm">Loading…</div>
+        </main>
+      }
+    >
+      <ManagePageInner />
+    </Suspense>
+  )
+}
+
+function ManagePageInner() {
+  const params = useParams<{ slug: string }>()
+  const searchParams = useSearchParams()
+  const slug = params.slug
+
+  const [token, setToken] = useState<string | null>(null)
+  const [state, setState] = useState<PageState>('loading')
+  const [meta, setMeta] = useState<NotePublicMeta | null>(null)
+  const [remaining, setRemaining] = useState('')
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [extending, setExtending] = useState<number | null>(null)
+  const { message: toastMessage, showToast } = useToast()
+
+  useEffect(() => {
+    const fromUrl = searchParams.get('token')
+    if (fromUrl) {
+      setToken(fromUrl)
+      return
+    }
+    try {
+      const stored = JSON.parse(localStorage.getItem('levpriv_notes') || '[]') as Array<{
+        slug: string
+        ownerToken: string
+      }>
+      const match = stored.find((n) => n.slug === slug)
+      setToken(match?.ownerToken ?? null)
+    } catch {
+      setToken(null)
+    }
+  }, [slug, searchParams])
+
+  const fetchMeta = useCallback(async () => {
+    if (!token) return
+    const res = await fetch(`/api/notes/${slug}?token=${encodeURIComponent(token)}`)
+    const data = (await res.json()) as NotePublicMeta
+
+    if (!data.exists) {
+      setState('gone')
+      return
+    }
+    if (data.views === undefined) {
+      setState('unauthorized')
+      return
+    }
+    setMeta(data)
+    setState('ready')
+  }, [slug, token])
+
+  useEffect(() => {
+    if (token) fetchMeta()
+  }, [token, fetchMeta])
+
+  useEffect(() => {
+    if (token === null) setState('unauthorized')
+  }, [token])
+
+  useEffect(() => {
+    if (!meta?.expiresAt) return
+    const tick = () => {
+      const ms = meta.expiresAt! - Date.now()
+      if (ms <= 0) {
+        setRemaining('0s')
+        setState('gone')
+        return
+      }
+      setRemaining(formatRemaining(ms))
+    }
+    tick()
+    const interval = setInterval(tick, 1000)
+    return () => clearInterval(interval)
+  }, [meta?.expiresAt])
+
+  async function handleDelete() {
+    if (!token) return
+    setDeleting(true)
+    try {
+      const res = await fetch(`/api/notes/${slug}?token=${encodeURIComponent(token)}`, {
+        method: 'DELETE',
+      })
+      if (res.ok) {
+        showToast('Note permanently deleted')
+        setState('deleted')
+      } else {
+        showToast('Failed to delete note')
+      }
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  async function handleExtend(seconds: number) {
+    if (!token) return
+    setExtending(seconds)
+    try {
+      const res = await fetch(`/api/notes/${slug}?token=${encodeURIComponent(token)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ additionalSeconds: seconds }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setMeta((prev) => (prev ? { ...prev, expiresAt: data.expiresAt } : prev))
+        showToast('Expiration extended')
+      } else {
+        showToast(data.error || 'Failed to extend expiration')
+      }
+    } finally {
+      setExtending(null)
+    }
+  }
 
   return (
-    <main className="flex-1 px-6 py-16">
-      <div className="w-full max-w-2xl mx-auto animate-fadeIn">
-        <h1 className="font-display text-3xl tracking-tight mb-3">Frequently asked questions</h1>
-        <p className="text-base-muted text-sm mb-10">
-          Everything worth knowing before you share something private.
-        </p>
+    <main className="flex-1 flex items-center justify-center px-6 py-16">
+      <div className="w-full max-w-lg animate-fadeIn">
+        {state === 'loading' && (
+          <div className="text-center text-base-muted text-sm">Loading…</div>
+        )}
 
-        <div className="border-t border-base-border">
-          {FAQS.map((item, index) => {
-            const isOpen = openIndex === index
-            return (
-              <div key={item.question} className="border-b border-base-border">
-                <button
-                  onClick={() => setOpenIndex(isOpen ? null : index)}
-                  className="w-full flex items-center justify-between gap-4 py-5 text-left"
-                >
-                  <span className="text-sm text-base-white">{item.question}</span>
-                  <ChevronDown
-                    size={16}
-                    className={`shrink-0 text-base-muted transition-transform duration-200 ${
-                      isOpen ? 'rotate-180' : ''
-                    }`}
-                  />
-                </button>
-                {isOpen && (
-                  <p className="text-sm text-base-muted leading-relaxed pb-5 pr-8 animate-fadeIn">
-                    {item.answer}
-                  </p>
-                )}
+        {state === 'unauthorized' && (
+          <div className="text-center">
+            <PadlockIcon />
+            <h1 className="text-xl font-medium mb-2 mt-4">Management link required</h1>
+            <p className="text-base-muted text-sm">
+              This page needs the owner token from your note's management link to show status or
+              allow deletion.
+            </p>
+          </div>
+        )}
+
+        {(state === 'gone' || state === 'deleted') && (
+          <div className="text-center">
+            {state === 'deleted' ? <SuccessTick /> : <DestructIcon />}
+            <h1 className="text-xl font-medium mb-2 mt-4">
+              {state === 'deleted' ? 'Note deleted' : 'This note has self-destructed'}
+            </h1>
+            <p className="text-base-muted text-sm">
+              {state === 'deleted'
+                ? 'It has been permanently removed and is no longer accessible.'
+                : 'Its time simply ran out.'}
+            </p>
+            <a
+              href="/"
+              className="inline-block mt-8 border border-base-border rounded-md px-5 py-2.5 text-sm hover:border-base-mid transition-colors"
+            >
+              Create a new note
+            </a>
+          </div>
+        )}
+
+        {state === 'ready' && meta && (
+          <div>
+            <h1 className="text-xl font-medium mb-1">Note management</h1>
+            <p className="text-base-muted text-sm mb-8">Slug: {slug}</p>
+
+            <dl className="space-y-4 mb-8">
+              <Row label="Status" value="Active" />
+              <Row
+                label="Created"
+                value={new Date(meta.createdAt!).toLocaleString(undefined, {
+                  dateStyle: 'medium',
+                  timeStyle: 'short',
+                })}
+              />
+              <Row
+                label="Expires"
+                value={new Date(meta.expiresAt!).toLocaleString(undefined, {
+                  dateStyle: 'medium',
+                  timeStyle: 'short',
+                })}
+              />
+              <Row label="Self-destructs in" value={remaining} />
+              <Row label="Views" value={String(meta.views ?? 0)} />
+              <Row label="Protected with private key" value={meta.hasPrivateKey ? 'Yes' : 'No'} />
+              <Row label="Deletes after first read" value={meta.burnAfterReading ? 'Yes' : 'No'} />
+              {meta.attachment && (
+                <Row
+                  label="Attachment"
+                  value={`${meta.attachment.kind} · ${meta.attachment.fileName}`}
+                />
+              )}
+            </dl>
+
+            <div className="mb-8">
+              <label className="block text-xs uppercase tracking-wide text-base-muted mb-2">
+                Extend expiration
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {EXTEND_PRESETS.map((preset) => (
+                  <button
+                    key={preset.label}
+                    onClick={() => handleExtend(preset.seconds)}
+                    disabled={extending !== null}
+                    className="text-sm rounded-md py-2.5 border border-base-border text-base-muted hover:text-base-white hover:border-base-mid transition-colors disabled:opacity-50"
+                  >
+                    {extending === preset.seconds ? '…' : preset.label}
+                  </button>
+                ))}
               </div>
-            )
-          })}
-        </div>
+            </div>
+
+            {!confirmingDelete ? (
+              <button
+                onClick={() => setConfirmingDelete(true)}
+                className="w-full border border-base-border rounded-md py-3 text-sm text-base-white hover:border-base-mid transition-colors"
+              >
+                Delete note now
+              </button>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-sm text-base-muted text-center mb-2">
+                  This can't be undone. Delete permanently?
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setConfirmingDelete(false)}
+                    className="flex-1 border border-base-border rounded-md py-3 text-sm hover:border-base-mid transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleDelete}
+                    disabled={deleting}
+                    className="flex-1 bg-base-white text-base-black rounded-md py-3 text-sm font-medium hover:bg-base-muted transition-colors disabled:opacity-50"
+                  >
+                    {deleting ? 'Deleting…' : 'Confirm delete'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
+      <Toast message={toastMessage} />
     </main>
+  )
+}
+
+function Row({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between border-b border-base-border pb-3">
+      <dt className="text-sm text-base-muted">{label}</dt>
+      <dd className="text-sm text-base-white">{value}</dd>
+    </div>
   )
 }
