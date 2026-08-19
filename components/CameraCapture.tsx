@@ -26,7 +26,7 @@ function pickSupportedMimeType(candidates: string[]): string {
   return candidates[candidates.length - 1]
 }
 
-const MAX_VIDEO_SECONDS = 40 // keeps clips comfortably under the 4MB ceiling
+const MAX_VIDEO_SECONDS = 90 // keeps clips comfortably under the 4MB ceiling
 
 export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -116,7 +116,7 @@ export function CameraCapture({ onCapture, onClose }: CameraCaptureProps) {
     const mimeType = pickSupportedMimeType(VIDEO_MIME_CANDIDATES)
     const recorder = new MediaRecorder(streamRef.current, {
       mimeType,
-      videoBitsPerSecond: 600_000, // ~600kbps - keeps a 40s clip under ~3MB
+      videoBitsPerSecond: 1_500_000, // ~600kbps - keeps a 40s clip under ~3MB
     })
     chunksRef.current = []
 

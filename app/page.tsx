@@ -199,7 +199,7 @@ export default function HomePage() {
               href={result.manageUrl}
               className="block text-center text-sm text-base-muted hover:text-base-white transition-colors pt-2"
             >
-              Go to management view â†’
+              Go to management view 
             </a>
           </div>
 
@@ -260,7 +260,7 @@ export default function HomePage() {
           </div>
         </Field>
 
-        <Field label="Record or attach (audio, video, photo, or file â€” 4MB max)">
+        <Field label="Record or attach (audio, video, photo, or file â€” 20MB max)">
           <AttachmentComposer onAttached={setAttachment} disabled={loading} />
         </Field>
 

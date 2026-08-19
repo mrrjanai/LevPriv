@@ -1,3 +1,4 @@
+import { upload } from '@vercel/blob/client'
 import type { AttachmentInput } from './types'
 
 export async function uploadAttachment(
@@ -6,40 +7,26 @@ export async function uploadAttachment(
   mimeType: string,
   onProgress?: (percent: number) => void
 ): Promise<AttachmentInput> {
-  const formData = new FormData()
-  formData.append('file', file, fileName)
-  formData.append('mimeType', mimeType)
-  formData.append('fileName', fileName)
+    // Strip codec info (e.g. ";codecs=opus") before telling Vercel the content
+  // type - their allow-list check is an exact string match against the base
+  // type, and recorded audio/video always comes tagged with codec details.
+  // We still keep the full original mimeType in our own returned metadata.
+  const baseContentType = mimeType.split(';')[0].trim()
 
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest()
-
-    xhr.upload.addEventListener('progress', (e) => {
-      if (e.lengthComputable && onProgress) {
-        onProgress(Math.round((e.loaded / e.total) * 100))
-      }
-    })
-
-    xhr.addEventListener('load', () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          resolve(JSON.parse(xhr.responseText) as AttachmentInput)
-        } catch {
-          reject(new Error('Invalid server response.'))
-        }
-      } else {
-        try {
-          const data = JSON.parse(xhr.responseText)
-          reject(new Error(data.error || 'Upload failed.'))
-        } catch {
-          reject(new Error('Upload failed.'))
-        }
-      }
-    })
-
-    xhr.addEventListener('error', () => reject(new Error('Network error during upload.')))
-
-    xhr.open('POST', '/api/attachments/upload')
-    xhr.send(formData)
+  const blob = await upload(fileName, file, {
+    access: 'private', // must match the store's actual access mode
+    handleUploadUrl: '/api/blob-upload',
+    contentType: baseContentType,
+    onUploadProgress: (event) => {
+      onProgress?.(Math.round(event.percentage))
+    },
   })
+
+  return {
+    blobUrl: blob.url,
+    blobPathname: blob.pathname,
+    mimeType,
+    fileName,
+    sizeBytes: file.size,
+  }
 }
