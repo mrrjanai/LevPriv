@@ -139,7 +139,7 @@ export async function POST(req: NextRequest) {
 
     await redis.set(noteKey(slug), note, { ex: body.durationSeconds })
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin
+        const appUrl = (process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin).replace(/\/+$/, '')
 
     const response: CreateNoteResponse = {
       slug,
