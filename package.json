@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "prepare": "husky"
   },
   "dependencies": {
     "@upstash/ratelimit": "^2.0.3",
@@ -27,8 +28,15 @@
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "autoprefixer": "^10.4.19",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.4.1",
     "postcss": "^8.4.39",
     "tailwindcss": "^3.4.4",
     "typescript": "^5.5.3"
+  },
+    "lint-staged": {
+    "*.{ts,tsx}": [
+      "bash -c 'tsc --noEmit -p tsconfig.json'"
+    ]
   }
 }
