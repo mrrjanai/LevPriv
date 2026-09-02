@@ -5,10 +5,10 @@ interface WatermarkOverlayProps {
 }
 
 export function WatermarkOverlay({ ip, viewedAt, viewId }: WatermarkOverlayProps) {
-  const label = `${ip} Â· ${new Date(viewedAt).toLocaleString(undefined, {
+  const label = `${ip}  -  ${new Date(viewedAt).toLocaleString(undefined, {
     dateStyle: 'short',
     timeStyle: 'short',
-  })} Â· #${viewId}`
+  })}  -  #${viewId}`
 
   return (
     <div

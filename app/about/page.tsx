@@ -12,8 +12,8 @@ export default function AboutPage() {
             <h2 className="text-base-white font-medium mb-2">Why this exists</h2>
             <p className="text-base-muted">
               Most messaging tools are built to remember everything forever. LevPriv does the
-              opposite. You write a note, decide how long it should live â€” or whether it should
-              vanish the instant someone reads it â€” and share a link. After that, it's gone.
+              opposite. You write a note, decide how long it should live  -  or whether it should
+              vanish the instant someone reads it  -  and share a link. After that, it's gone.
               No archive, no account holding onto it, nothing to accidentally leak later.
             </p>
           </section>
@@ -23,7 +23,7 @@ export default function AboutPage() {
             <p className="text-base-muted">
               Privacy shouldn't require a sign-up form. Every note on LevPriv is reachable only
               by whoever holds its link, encrypted before it ever touches a database, and
-              destroyed automatically â€” whether that's in three minutes or seven days. There's
+              destroyed automatically  -  whether that's in three minutes or seven days. There's
               no dashboard of your personal history sitting on a server somewhere. Just the
               note, its lifespan, and then nothing.
             </p>

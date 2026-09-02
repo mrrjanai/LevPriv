@@ -156,7 +156,7 @@ export default function HomePage() {
               <div className="flex items-center gap-2 mt-4 bg-base-near border border-base-border rounded-md px-3 py-2.5 text-xs text-base-muted">
                 <KeyRound size={14} className="shrink-0" />
                 This note requires a private key to view. Remember to share it with the
-                recipient separately â€” the link alone won't work.
+                recipient separately  -  the link alone won't work.
               </div>
             )}
           </div>
@@ -186,7 +186,7 @@ export default function HomePage() {
               </div>
             )}
 
-            <Field label="Management link (keep this private â€” lets you delete or extend the note)">
+            <Field label="Management link (keep this private  -  lets you delete or extend the note)">
               <div className="flex gap-2">
                 <code className="flex-1 truncate bg-base-near border border-base-border rounded-md px-3 py-2.5 text-sm text-base-muted">
                   {result.manageUrl}
@@ -260,7 +260,7 @@ export default function HomePage() {
           </div>
         </Field>
 
-        <Field label="Record or attach (audio, video, photo, or file â€” 20MB max)">
+        <Field label="Record or attach (audio, video, photo, or file - 20MB max)">
           <AttachmentComposer onAttached={setAttachment} disabled={loading} />
         </Field>
 
@@ -349,7 +349,7 @@ export default function HomePage() {
           disabled={loading}
           className="w-full bg-base-white text-base-black rounded-md py-3.5 text-sm font-medium hover:bg-base-muted transition-colors disabled:opacity-50"
         >
-          {loading ? 'Creatingâ€¦' : 'Create self-destructing note'}
+          {loading ? 'Creating...' : 'Create self-destructing note'}
         </button>
       </form>
     </main>

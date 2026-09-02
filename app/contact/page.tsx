@@ -9,7 +9,7 @@ export default function ContactPage() {
       <div className="w-full max-w-2xl mx-auto animate-fadeIn">
         <h1 className="font-display text-3xl tracking-tight mb-3">Contact</h1>
         <p className="text-base-muted text-sm mb-10">
-          Questions, feedback, or something not working the way it should â€” reach out directly.
+          Questions, feedback, or something not working the way it should  -  reach out directly.
         </p>
 
         <a
@@ -23,7 +23,7 @@ export default function ContactPage() {
         <p className="text-xs text-base-muted mt-6">
           We aim to respond within a few business days. For anything involving a note you
           created, it helps to include the note's slug (the random characters at the end of its
-          link) â€” never the note's content or private key itself.
+          link)  -  never the note's content or private key itself.
         </p>
       </div>
     </main>

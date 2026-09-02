@@ -96,7 +96,7 @@ export default function DashboardPage() {
           <div>
             <h1 className="text-2xl font-medium tracking-tight">My notes</h1>
             <p className="text-base-muted mt-2 text-sm">
-              Notes created from this browser. Nothing here needs an account â€” clearing your
+              Notes created from this browser. Nothing here needs an account  -  clearing your
               browser data clears this list, but doesn't affect the notes themselves.
             </p>
           </div>
@@ -108,7 +108,7 @@ export default function DashboardPage() {
           </a>
         </div>
 
-        {!loaded && <p className="text-sm text-base-muted">Loadingâ€¦</p>}
+        {!loaded && <p className="text-sm text-base-muted">Loading...</p>}
 
         {loaded && entries.length === 0 && (
           <div className="text-center py-16 border border-base-border rounded-md">
@@ -136,10 +136,10 @@ export default function DashboardPage() {
                   {appUrl}/note/{entry.slug}
                 </a>
                 <p className="text-xs text-base-muted mt-1">
-                  {entry.status === 'checking' && 'Checkingâ€¦'}
+                  {entry.status === 'checking' && 'Checking...'}
                   {entry.status === 'active' &&
-                    `Active Â· ${formatRemaining(entry.expiresAt - Date.now())} left${
-                      entry.views !== undefined ? ` Â· ${entry.views} view${entry.views === 1 ? '' : 's'}` : ''
+                    `Active  -  ${formatRemaining(entry.expiresAt - Date.now())} left${
+                      entry.views !== undefined ? `  -  ${entry.views} view${entry.views === 1 ? '' : 's'}` : ''
                     }`}
                   {entry.status === 'expired' && 'Self-destructed'}
                   {entry.status === 'deleted' && 'Deleted'}

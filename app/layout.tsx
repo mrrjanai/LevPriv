@@ -15,7 +15,7 @@ const fraunces = Fraunces({
 })
 
 export const metadata: Metadata = {
-  title: 'LevPriv â€” Private, self-destructing notes',
+  title: 'LevPriv - Private, self-destructing notes',
   description:
     'Share a note that disappears on its own. No accounts, no tracking, encrypted at rest.',
   robots: { index: false, follow: false },

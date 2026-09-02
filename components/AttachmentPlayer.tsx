@@ -85,7 +85,7 @@ export function AttachmentPlayer({ attachment, mediaSrc }: AttachmentPlayerProps
       </a>
       <p className="text-xs text-base-muted mt-3">
         This file type can't be previewed in-page, so opening it will use your browser or
-        device's normal file handling â€” which may involve a temporary download to view it.
+        device's normal file handling  -  which may involve a temporary download to view it.
         The link above stops working once this note expires.
       </p>
     </div>

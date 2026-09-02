@@ -32,7 +32,7 @@ export function ShareButton({ url, title = 'A private note' }: ShareButtonProps)
       try {
         await navigator.share({ title, url })
       } catch {
-        // User cancelled the share sheet â€” no action needed.
+        // User cancelled the share sheet  -  no action needed.
       }
     } else {
       setMenuOpen((v) => !v)
