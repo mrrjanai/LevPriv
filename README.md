@@ -1,96 +1,81 @@
 # LevPriv
 
-Private, self-destructing notes. No accounts. Encrypted at rest. Auto-deletes itself.
+Private, self-destructing notes with optional audio/video/photo/file attachments. No accounts. Encrypted at rest. Auto-deletes itself.
 
-## What's new since the first build
+## Features
 
-- **Burn after reading**: optional toggle to destroy a note the instant it's opened once,
-  regardless of the timer.
-- **Show/hide toggle** on every private-key input field.
-- **Copy-all button** on the note viewer, plus upgraded copy buttons everywhere with a
-  checkmark confirmation.
-- **Ctrl+Enter / Cmd+Enter** submits the note form from the textarea.
-- **Color-coded character counter** — turns white as you approach the 20,000-char limit.
-- **QR code** shown after creating a note, for quick scan-to-open on another device.
-- **Private-key reminder badge** on the "note created" screen so you don't forget to share
-  the passphrase separately.
-- **Share button** — uses the native share sheet on mobile (WhatsApp, Messages, etc. all
-  show up automatically); falls back to a small menu (WhatsApp/Telegram/X/Email links) on
-  desktop, where no native share sheet exists.
-- **Expiry warning banner** on the note viewer when under 60 seconds remain.
-- **Extend expiration** button on the management page (+10 min / +1 hour / +24 hours).
-- **Toast confirmations** for delete and extend actions.
-- **`/dashboard`** — a no-login list of every note created from the current browser
-  (reads the same `localStorage` record used for management links), with per-note delete.
-- **Lightweight bot protection** on note creation: an invisible honeypot field plus a
-  minimum-time-since-page-load check. No CAPTCHA service, no extra account/API keys needed.
-  See "Upgrading bot protection" below if you want something stronger later.
-- **Wrong-private-key lockout + delay**: 5 wrong attempts per note per IP within 5 minutes
-  triggers a temporary lockout, and every failed attempt has a small artificial delay to
-  slow down brute-forcing short passphrases.
-- **Request size guard**: the create API now rejects oversized request bodies before
-  parsing, independent of the client-side character limit.
-- **Footer** with a rights-reserved notice on every page.
-- **Navbar** on every page with the "LevPriv" wordmark (set in a distinct serif display font,
-  Fraunces) linking back to the home page, plus quiet links to My Notes / About / FAQ /
-  Privacy / Contact.
-- **Animated status icons** replacing plain text/dots: a circled X-draw for expired/
-  self-destructed states, a circled checkmark-draw for success states (note created, note
-  manually deleted), and a circled padlock wherever a passphrase or owner token is required.
-- **Four new pages**: `/about`, `/faq` (interactive accordion), `/privacy`, `/contact`.
-  **Before deploying, open `app/contact/page.tsx` and replace the placeholder
-  `hello@levpriv.app` with your real contact email.**
+- **Text notes** with configurable expiration (3 min to 30 days) or a custom duration
+- **Burn after reading** - destroys the note the instant it's opened once, overriding the timer
+- **Private key protection** - passphrase-derived encryption; the server never stores the key and cannot decrypt that note without it
+- **Attachments** - record audio/video/photos directly in-browser (mic + camera, with front/back camera flip), or upload an existing file. 20MB cap.
+- **Copy-protection on note text** - content loads blurred until tapped, text selection and copy/right-click are disabled, and a faint watermark (viewer's IP, timestamp, view ID) is overlaid on reveal for traceability if screenshotted
+- **No accounts** - ownership is handled via a secret management link generated at creation; a local, no-login "My notes" dashboard reads from the browser's own storage
+- **Extend or delete early** - from the management link, at any time before expiry
+- **Lightweight bot protection** - invisible honeypot + timing trap on note creation, no CAPTCHA service required
+- **Wrong-key lockout** - 5 attempts per note per IP per 5 minutes, plus artificial delay on every wrong guess
+- Dark, minimal black/white/grey UI with a custom logo mark and Fraunces display font for the wordmark
 
-## How it works (architecture)
+## Architecture
 
-- **Storage**: Upstash Redis (serverless, REST-based). Every note is stored under key
-  `note:<slug>` with a Redis TTL exactly matching its expiration — so even if application
-  logic somehow failed to check expiry, Redis physically deletes the key on schedule.
-- **Slugs**: 10-character base62 strings (`nanoid`), ~59.5 bits of entropy. Collision check
-  against Redis on creation, with automatic retry (practically never triggers).
-- **Encryption**:
-  - Content is **always** encrypted with AES-256-GCM before it touches Redis.
-  - If the creator sets a private key, the AES key is derived from that passphrase via
-    PBKDF2 (210,000 iterations) with a random salt. The server never stores the passphrase,
-    so it *cannot* decrypt that note without the visitor supplying the key.
-  - If no private key is set, content is encrypted with a key derived from the server-only
-    `SERVER_ENCRYPTION_KEY` env var, so raw note content is never sitting in plaintext in
-    the database.
-- **Ownership without accounts**: on creation, the server generates a random `ownerToken`,
-  returns it once in the response, and stores only its SHA-256 hash. The `/manage/[slug]`
-  page (and the delete API) require the raw token — matching it against the stored hash —
-  so only whoever holds the management link (or has it cached in their browser's
-  `localStorage`) can see stats or delete early.
-- **Rate limiting**: `@upstash/ratelimit` sliding-window limiters cap note creation (10/min/IP)
-  and viewing/polling (60/min/IP) to blunt abuse and scraping.
-- **Security headers**: CSP, X-Frame-Options, nosniff, and a locked-down Permissions-Policy
-  are set globally in `next.config.js`.
+### Storage
+- **Upstash Redis** - all note metadata (expiry, view count, encrypted content, owner token hash, attachment metadata). Every note is stored with a Redis TTL matching its expiry, so it's physically purged even if application logic is bypassed.
+- **Vercel Blob** (private access store) - the actual attachment files (audio/video/photo/file bytes).
+
+### Attachment upload flow
+Uploads go **directly from the browser to Vercel Blob** (not proxied through our own server), using `@vercel/blob/client`'s `upload()` function against a token our `/api/blob-upload` route issues. This bypasses Vercel serverless functions' hard ~4.5MB request body limit, which is what makes a 20MB cap possible.
+
+The Blob store is configured with **private access**, not public - `access: 'private'` is set explicitly on both the client `upload()` call and the server-side `put()`/`get()` calls, and it must match the store's actual configured access mode (set once, permanently, when the store is created) or uploads fail outright.
+
+### Attachment read flow
+Because the store is private, attachment bytes are never served from a raw public URL. Instead, `/api/notes/[slug]/media` streams them server-side using the Blob SDK's `get()` function, gated behind a short-lived (15 min), HMAC-signed, slug-scoped token issued only after a note is successfully unlocked. The real Blob URL is never exposed to the browser.
+
+### Encryption
+- Note text is always encrypted with AES-256-GCM before storage.
+- If a private key is set, the encryption key is derived from that passphrase via PBKDF2 (210,000 iterations) with a random salt - the server never stores the passphrase and cannot decrypt that note without it.
+- If no private key is set, content is encrypted with a key derived from the server-only `SERVER_ENCRYPTION_KEY`.
+- Attachments are currently **not** end-to-end encrypted the same way text is - they rely on the store's private access mode + our own token-gated read route for protection, not client-side encryption of the file bytes.
+
+### The "no download" model - an honest limitation
+Nothing that plays through a screen and speakers can ever be made screen-recording-proof - that's a universal limitation, not something specific to this app. What's actually implemented: no visible download button, the real file URL never appears in the browser's network tab, right-click/save is disabled on media and note text, and access dies the instant the note dies. This raises real friction against casual saving; it does not and cannot prevent deliberate screen capture. True OS-level screenshot-blocking (e.g. Android's `FLAG_SECURE`) requires a native app wrapper and has not been built yet - see "Planned: Android app" below.
+
+For generic **file** attachments (PDF, docx, zip, etc.) there's an unavoidable exception: most file types require the browser to hand them to another app to open, which is a download by nature. The UI says this plainly rather than pretending otherwise.
 
 ## Project structure
 
 ```
 levpriv/
 ├── app/
-│   ├── layout.tsx              # Root layout, dark mode, Inter font
-│   ├── globals.css             # Tailwind + minimal custom styles
-│   ├── page.tsx                # Home: note creation form
-│   ├── not-found.tsx           # Custom 404
-│   ├── note/[slug]/page.tsx    # Public note viewer (countdown, private key prompt)
-│   ├── manage/[slug]/page.tsx  # Owner-only management view (stats, delete)
+│   ├── layout.tsx              # Root layout, dark mode, Inter + Fraunces fonts, Navbar/Footer
+│   ├── globals.css             # Tailwind + animations (status icons, toasts)
+│   ├── page.tsx                # Home: note creation form + attachment composer
+│   ├── about/, faq/, privacy/, contact/  # Static pages
+│   ├── dashboard/page.tsx      # No-login list of notes created from this browser
+│   ├── not-found.tsx
+│   ├── icon.png, apple-icon.png # Favicon / apple touch icon (Next.js auto-detected)
+│   ├── note/[slug]/page.tsx    # Public note viewer
+│   ├── manage/[slug]/page.tsx  # Owner-only management view (stats, delete, extend)
 │   └── api/
-│       ├── notes/route.ts             # POST: create note
-│       └── notes/[slug]/route.ts      # GET: metadata, POST: reveal content, DELETE: destroy
+│       ├── notes/route.ts                  # POST: create note
+│       ├── notes/[slug]/route.ts           # GET/POST/PATCH/DELETE: metadata/reveal/extend/delete
+│       ├── notes/[slug]/media/route.ts     # GET: stream attachment bytes (token-gated)
+│       └── blob-upload/route.ts            # POST: issues client-upload tokens for Vercel Blob
+├── components/
+│   ├── AttachmentComposer.tsx  # Mic record / camera / file-picker UI
+│   ├── CameraCapture.tsx       # In-browser photo/video capture modal, front/back flip
+│   ├── AttachmentPlayer.tsx    # Renders audio/video/image/file in the note viewer
+│   ├── ProtectedText.tsx       # Blur-until-tap, copy/selection-blocked note text
+│   ├── WatermarkOverlay.tsx    # Faint traceability overlay on revealed text
+│   ├── PasswordField.tsx, CopyButton.tsx, ShareButton.tsx, Toast.tsx
+│   ├── Navbar.tsx, Footer.tsx, LogoMark.tsx
+│   └── icons/                  # Animated status icons (destruct/success/padlock)
 ├── lib/
-│   ├── redis.ts        # Upstash Redis client
-│   ├── crypto.ts       # AES-256-GCM encrypt/decrypt, PBKDF2, hashing
-│   ├── slug.ts          # Base62 slug generator
-│   ├── ratelimit.ts     # Sliding-window rate limiters
-│   ├── duration.ts      # Duration presets, validation, countdown formatting
-│   └── types.ts         # Shared TypeScript types
-├── vercel.json
-├── next.config.js
-├── tailwind.config.ts
-├── package.json
+│   ├── redis.ts, crypto.ts, slug.ts, ratelimit.ts, duration.ts, types.ts
+│   ├── media.ts                # Attachment MIME allow-list, size cap, kind detection
+│   ├── mediaToken.ts           # Short-lived signed tokens gating attachment reads
+│   ├── blob.ts                 # Safe blob deletion helper
+│   └── uploadAttachment.ts     # Client-side direct-to-Blob upload
+├── .husky/pre-commit           # Runs `tsc --noEmit` before every commit
+├── vercel.json, next.config.js, tailwind.config.ts
 └── .env.example
 ```
 
@@ -98,7 +83,8 @@ levpriv/
 
 ### 1. Prerequisites
 - Node.js 18.18+ (20.x recommended)
-- A free [Upstash](https://console.upstash.com) account for Redis
+- A free [Upstash](https://console.upstash.com) account (Redis)
+- A [Vercel](https://vercel.com) account with **Blob storage** enabled on this project
 
 ### 2. Install
 ```bash
@@ -106,159 +92,93 @@ npm install
 ```
 
 ### 3. Create an Upstash Redis database
-1. Go to https://console.upstash.com → **Create Database**.
-2. Choose the **Regional** or **Global** free tier (either works — TTL/eviction not needed
-   since we set per-key TTLs ourselves).
-3. Copy the **REST URL** and **REST TOKEN** from the database details page.
+Same as always - create one at console.upstash.com, copy the REST URL and token from the database's REST API section.
 
-### 4. Configure environment variables
+### 4. Create a Vercel Blob store
+1. Vercel dashboard → your project → **Storage** tab → **Create Database** → **Blob**
+2. **Connect it to your project**, choosing the environments you need (Production/Preview/Development)
+3. Check **"Add a read-write token env var to this connection"** when connecting
+4. This creates `BLOB_READ_WRITE_TOKEN` in your project's environment variables
+
+Note: the store's access mode (public/private) is fixed at creation and cannot be changed later. This project expects **private** access - `get()`/`put()`/`upload()` calls throughout the codebase explicitly pass `access: 'private'`, and it must match the store's actual mode or uploads and reads fail.
+
+### 5. Configure environment variables
 ```bash
 cp .env.example .env.local
 ```
-Fill in:
-```
-UPSTASH_REDIS_REST_URL=https://xxxx.upstash.io
-UPSTASH_REDIS_REST_TOKEN=xxxxxxxx
-SERVER_ENCRYPTION_KEY=<generate with: openssl rand -hex 32>
-NEXT_PUBLIC_APP_URL=http://localhost:3000
-```
-
-### 5. Run locally
+Fill in `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`, `BLOB_READ_WRITE_TOKEN`, and generate a `SERVER_ENCRYPTION_KEY`:
 ```bash
-npm run dev
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
-Visit http://localhost:3000.
 
-## Deploying to Vercel
-
-### Option A — via the Vercel dashboard (recommended for first deploy)
-1. Push this project to a GitHub repository.
-2. Go to https://vercel.com/new and import the repo.
-3. Vercel auto-detects Next.js — no build settings need changing.
-4. **Add environment variables** under Project Settings → Environment Variables:
-   - `UPSTASH_REDIS_REST_URL`
-   - `UPSTASH_REDIS_REST_TOKEN`
-   - `SERVER_ENCRYPTION_KEY` (generate a fresh one for production — don't reuse your local one)
-   - `NEXT_PUBLIC_APP_URL` — set to your actual deployment URL, e.g.
-     `https://levpriv.vercel.app` (update this once Vercel assigns your domain, then redeploy)
-5. Click **Deploy**.
-
-**Easier alternative for Redis**: In the Vercel dashboard, go to your project → **Storage** →
-**Browse Marketplace** → **Upstash**. This provisions a Redis database and auto-injects
-`UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` into your project for you — skip
-step 3 above if you do this.
-
-### Option B — via Vercel CLI
+For local development specifically, pulling Vercel's actual configured environment directly is more reliable than copying values by hand:
 ```bash
 npm i -g vercel
 vercel login
-vercel                # first deploy, follow prompts
-vercel env add UPSTASH_REDIS_REST_URL production
-vercel env add UPSTASH_REDIS_REST_TOKEN production
-vercel env add SERVER_ENCRYPTION_KEY production
-vercel env add NEXT_PUBLIC_APP_URL production
-vercel --prod         # redeploy with env vars applied
+vercel link
+vercel env pull .env.local
 ```
 
-## Connecting a custom domain later
+### 6. Run locally
+```bash
+npm run dev
+```
 
-1. Buy a domain (Namecheap, Cloudflare Registrar, Google Domains successor, etc.) —
-   anything that lets you edit DNS records.
-2. In the Vercel dashboard: your project → **Settings** → **Domains** → add your domain
-   (e.g. `levpriv.com`).
-3. Vercel will show you either:
-   - An **A record** (`76.76.21.21`) to point the root domain, or
-   - A **CNAME** (`cname.vercel-dns.com`) for a subdomain like `note.levpriv.com`.
-4. Add that record in your domain registrar's DNS settings.
-5. Wait for DNS propagation (usually minutes, sometimes up to a few hours). Vercel
-   auto-issues an SSL certificate once it verifies the record.
-6. Update the `NEXT_PUBLIC_APP_URL` environment variable to your new domain and redeploy —
-   this is what's used to build the shareable links returned to users.
+## Deploying to Vercel
+
+1. Push to GitHub, import the repo at vercel.com/new
+2. Add all four environment variables before deploying (or let the Blob/Upstash integrations inject them automatically per the setup above)
+3. Deploy
+4. Once live, update `NEXT_PUBLIC_APP_URL` to match your actual assigned domain exactly, then redeploy
+
+Every environment variable change requires a redeploy to take effect - it is never picked up by an already-running deployment.
+
+## Pre-commit safety net
+
+This project runs `tsc --noEmit` automatically before every commit via Husky + lint-staged, catching syntax errors, missing imports, and type mismatches before they ever reach a build. If a commit is rejected, the exact TypeScript error is printed in your terminal - fix it and commit again.
 
 ## Testing checklist
 
-**Expiration**
-1. Create a note with the 3-minute preset.
-2. Open the note link — content should display with a live countdown.
-3. Wait past 3 minutes (or temporarily set a custom duration of 1 minute to test faster).
-4. Refresh the note link — should show "This note has self-destructed."
+**Core note lifecycle**
+- Create with each duration preset and a custom duration; confirm countdown and self-destruct
+- Manual delete via the management link; confirm it's inaccessible immediately
+- Extend expiration from the management page
 
-**Manual deletion**
-1. Create a note, copy the **management link** shown after creation.
-2. Open the management link — should show views, created/expiry timestamps, and a
-   delete button.
-3. Click **Delete note now** → **Confirm delete**.
-4. Open the original note link — should show the self-destructed message immediately,
-   even though the timer hadn't run out.
-
-**Private key flow**
-1. Create a note and fill in the "Private key" field, e.g. `test1234`.
-2. Open the note link in an incognito window — should prompt "This note is protected."
-3. Enter the wrong key — should show "Incorrect private key."
-4. Enter the correct key — content should reveal and the view counter should increment.
-
-**View count**
-1. Create a note without a private key.
-2. Open the link 3 times (refresh each time, or open in different browsers/incognito).
-3. Open the **management link** — "Views" should read 3.
-
-**Rate limiting**
-1. Rapidly submit the creation form more than 10 times within a minute from the same
-   network — the 11th request should return "Too many notes created."
+**Private key**
+- Set one, confirm the viewer requires it; wrong key 5x in a row triggers a temporary lockout
 
 **Burn after reading**
-1. Create a note with "Delete immediately after being read once" checked.
-2. Open the note link — content displays, and the footer note says it's been destroyed.
-3. Refresh the same link — should immediately show "self-destructed," even though the
-   timer hadn't run out.
+- Enable it, open the note once, confirm a second open shows "self-destructed"
 
-**Extend expiration**
-1. Create a short note (e.g. 3 minutes), open its management link.
-2. Click one of the extend buttons (e.g. "+10 minutes").
-3. The "Expires" and "Self-destructs in" rows should update, and a toast should confirm
-   "Expiration extended."
+**Attachments**
+- Record audio (mic), confirm playback with no visible download control
+- Camera → photo and video, including the front/back flip button (only appears with 2+ cameras)
+- Attach an existing file via the paperclip picker
+- A note with only an attachment and no text
+- Try a file over 20MB or an unsupported type - should show a clear error, not hang
+- Attachment + burn-after-reading together
+- Attachment + private key together
+
+**Copy-protection**
+- Open a note, confirm text starts blurred, tapping reveals it
+- Confirm right-click and Ctrl+C do nothing on the revealed text
+- Confirm the faint watermark (IP/timestamp/view ID) is visible once revealed
 
 **Dashboard**
-1. Create two or three notes in the same browser.
-2. Visit `/dashboard` — all of them should be listed with live status and remaining time.
-3. Delete one from the dashboard directly — its status should flip to "Deleted."
+- Create several notes, confirm `/dashboard` lists them with live status and per-note delete
 
-**Wrong-key lockout**
-1. Create a note with a private key.
-2. On the note link, enter the wrong key 5 times in a row.
-3. The 6th attempt (even with the correct key) should return a temporary lockout message.
-   Wait 5 minutes, or test with a shorter window temporarily in `lib/ratelimit.ts` if you
-   don't want to wait.
+## Known limitations
 
-**Bot honeypot**
-- This one is hard to trigger manually since the honeypot field is invisible in normal use —
-  it's mainly there for scripted/automated submissions. No manual test needed unless you
-  want to fill the hidden `website` field via browser dev tools to confirm it's rejected.
+- **iOS Safari**: `MediaRecorder` (used for all audio/video recording) has historically inconsistent support on Safari/iOS. This has not been verified on an actual iOS device - test before relying on it there.
+- **Attachments are not end-to-end encrypted** the way text notes are (see Encryption section above).
+- **Blob cleanup is lazy, not proactive**: an expired/deleted note's attachment file is only physically deleted from storage the next time something touches that note's API routes. It's never servable again the moment the note record is gone, but the file itself may linger in storage a while longer for notes nobody revisits.
+- **No error monitoring** (e.g. Sentry) is currently configured - server-side errors are only visible via Vercel's function logs.
+- **Screenshot-blocking is not implemented.** It cannot be done for a website - see "Planned: Android app" below.
 
-## Upgrading bot protection later
+## Planned: Android app
 
-The current honeypot + timing-trap approach requires no external accounts and works out of
-the box, but it won't stop a determined scripted attacker. If abuse becomes a real problem,
-swap in [Cloudflare Turnstile](https://developers.cloudflare.com/turnstile/) (free, no
-login walls for end users) — it needs a site key and secret key from a free Cloudflare
-account, added as two more environment variables, plus a small widget added to the create
-form and a server-side verification call in `app/api/notes/route.ts`. Ask me when you're
-ready to wire it in.
+A native Android wrapper (Trusted Web Activity) is planned to enable genuine OS-level screenshot-blocking (`FLAG_SECURE`), which is only possible from a real native app, not a website. iOS does not expose this capability to any third-party app, native or otherwise, so this benefit would be Android-only. Not yet started.
 
-## Notes on the encryption model
+## License
 
-- Losing the private key means the note is **unrecoverable** — this is by design, since the
-  server never stores it. Make sure this is communicated to users if you extend the UI.
-- Rotating `SERVER_ENCRYPTION_KEY` in production will make any notes *not* using a private
-  key (i.e., encrypted with the server key) undecryptable. Only rotate it if you're okay
-  invalidating in-flight notes, or if you build a re-encryption migration.
-
-## Future-proofing for a mobile app
-
-- All state-changing logic lives behind the `/api/notes` and `/api/notes/[slug]` REST
-  endpoints — a React Native or TWA (Trusted Web Activity) client can call these directly
-  with no changes needed.
-- The web app itself is installable as a PWA-lite today (add a `manifest.json` and service
-  worker if you want home-screen installability without a full native shell).
-- `lib/types.ts` is the single source of truth for the request/response shapes — share this
-  file (or regenerate it) in a future mobile client to keep both in sync.
+MIT
