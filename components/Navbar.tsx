@@ -27,6 +27,9 @@ export function Navbar() {
           <Link href="/privacy" className="hover:text-base-white transition-colors">
             Privacy
           </Link>
+          <Link href="/terms" className="hover:text-base-white transition-colors">
+            Terms
+          </Link>
           <Link href="/contact" className="hover:text-base-white transition-colors">
             Contact
           </Link>
