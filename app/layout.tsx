@@ -5,6 +5,7 @@ import { Footer } from '@/components/Footer'
 import { Navbar } from '@/components/Navbar'
 import { Analytics } from '@vercel/analytics/next'
 import { SpeedInsights } from '@vercel/speed-insights/next'
+import * as Sentry from '@sentry/nextjs'
 
 const inter = Inter({ subsets: ['latin'], variable: '--font-inter' })
 const fraunces = Fraunces({
@@ -14,11 +15,16 @@ const fraunces = Fraunces({
   style: ['normal', 'italic'],
 })
 
-export const metadata: Metadata = {
-  title: 'LevPriv - Private, self-destructing notes',
-  description:
-    'Share a note that disappears on its own. No accounts, no tracking, encrypted at rest.',
-  robots: { index: false, follow: false },
+export function generateMetadata(): Metadata {
+  return {
+    title: 'LevPriv - Private, self-destructing notes',
+    description:
+      'Share a note that disappears on its own. No accounts, no tracking, encrypted at rest.',
+    robots: { index: false, follow: false },
+    other: {
+      ...Sentry.getTraceData(),
+    },
+  }
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
