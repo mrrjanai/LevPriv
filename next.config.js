@@ -16,8 +16,8 @@ const nextConfig = {
           {
             key: 'Content-Security-Policy',
             value: isDev
-  ? "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws: https://vercel.com;"
-  : "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://vercel.com;",
+  ? "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://va.vercel-scripts.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' ws: https://vercel.com https://va.vercel-scripts.com https://vitals.vercel-insights.com;"
+  : "default-src 'self'; script-src 'self' 'unsafe-inline' https://va.vercel-scripts.com; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://vercel.com https://va.vercel-scripts.com https://vitals.vercel-insights.com;",
           },
         ],
       },

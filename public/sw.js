@@ -9,6 +9,3 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(self.clients.claim())
 })
 
-self.addEventListener('fetch', () => {
-  // Intentionally pass every request straight through to the network.
-})
