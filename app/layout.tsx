@@ -24,12 +24,13 @@ export function generateMetadata(): Metadata {
     robots: { index: false, follow: false },
     manifest: '/manifest.json',
     themeColor: '#000000',
-    appleWebApp: {
+        appleWebApp: {
       capable: true,
       statusBarStyle: 'black-translucent',
       title: 'LevPriv',
     },
     other: {
+      'mobile-web-app-capable': 'yes',
       ...Sentry.getTraceData(),
     },
   }
