@@ -3,6 +3,7 @@ import { Inter, Fraunces } from 'next/font/google'
 import './globals.css'
 import { Footer } from '@/components/Footer'
 import { Navbar } from '@/components/Navbar'
+import { ServiceWorkerRegister } from '@/components/ServiceWorkerRegister'
 import { Analytics } from '@vercel/analytics/next'
 import { SpeedInsights } from '@vercel/speed-insights/next'
 import * as Sentry from '@sentry/nextjs'
@@ -21,6 +22,13 @@ export function generateMetadata(): Metadata {
     description:
       'Share a note that disappears on its own. No accounts, no tracking, encrypted at rest.',
     robots: { index: false, follow: false },
+    manifest: '/manifest.json',
+    themeColor: '#000000',
+    appleWebApp: {
+      capable: true,
+      statusBarStyle: 'black-translucent',
+      title: 'LevPriv',
+    },
     other: {
       ...Sentry.getTraceData(),
     },
@@ -38,6 +46,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="flex-1 flex flex-col">{children}</div>
         </div>
         <Footer />
+        <ServiceWorkerRegister />
         <Analytics />
         <SpeedInsights />
       </body>
