@@ -81,6 +81,8 @@ levpriv/
 
 ## Setup & local development
 
+See [CASE_STUDY.md](./CASE_STUDY.md) for a deep dive into a real production debugging incident from building this.
+
 ### 1. Prerequisites
 - Node.js 18.18+ (20.x recommended)
 - A free [Upstash](https://console.upstash.com) account (Redis)
