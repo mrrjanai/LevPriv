@@ -23,7 +23,6 @@ export function generateMetadata(): Metadata {
       'Share a note that disappears on its own. No accounts, no tracking, encrypted at rest.',
     robots: { index: false, follow: false },
     manifest: '/manifest.json',
-    themeColor: '#000000',
         appleWebApp: {
       capable: true,
       statusBarStyle: 'black-translucent',
@@ -33,6 +32,12 @@ export function generateMetadata(): Metadata {
       'mobile-web-app-capable': 'yes',
       ...Sentry.getTraceData(),
     },
+  }
+}
+
+export function generateViewport() {
+  return {
+    themeColor: '#000000',
   }
 }
 

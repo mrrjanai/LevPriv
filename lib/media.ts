@@ -11,6 +11,7 @@ export type MediaKind = 'audio' | 'video' | 'image' | 'file'
 // client-upload flow. That tradeoff means a smaller cap than the 25MB we'd
 // get with true client uploads, but it actually works today.
 export const MAX_MEDIA_BYTES = 20 * 1024 * 1024
+export const MAX_ATTACHMENTS_PER_NOTE = 5
 
 export const ALLOWED_MEDIA_TYPES: Record<MediaKind, string[]> = {
   image: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'],

@@ -19,7 +19,7 @@ export default function HomePage() {
   const [content, setContent] = useState('')
   const [privateKey, setPrivateKey] = useState('')
   const [burnAfterReading, setBurnAfterReading] = useState(false)
-  const [attachment, setAttachment] = useState<AttachmentInput | null>(null)
+  const [attachments, setAttachments] = useState<AttachmentInput[]>([])
   const [selectedSeconds, setSelectedSeconds] = useState<number>(DURATION_PRESETS[1].seconds)
   const [useCustom, setUseCustom] = useState(false)
   const [customValue, setCustomValue] = useState(30)
@@ -58,9 +58,9 @@ export default function HomePage() {
     e.preventDefault()
     setError(null)
 
-    if (content.trim().length === 0 && !attachment) {
-      setError('Write something or attach a file before sending it into the void.')
-      return
+      if (content.trim().length === 0 && attachments.length === 0) {
+       setError('Write something or attach a file before sending it into the void.')
+       return
     }
 
     setLoading(true)
@@ -73,7 +73,7 @@ export default function HomePage() {
           durationSeconds,
           privateKey: privateKey.length > 0 ? privateKey : undefined,
           burnAfterReading,
-          attachment: attachment ?? undefined,
+          attachments: attachments.length > 0 ? attachments : undefined,
           website,
           formRenderedAt: formRenderedAtRef.current,
         }),
@@ -100,7 +100,7 @@ export default function HomePage() {
           createdAt: Date.now(),
           expiresAt: created.expiresAt,
           hasPrivateKey: created.hasPrivateKey,
-          hasAttachment: created.hasAttachment,
+          attachmentCount: created.attachmentCount,
         })
         localStorage.setItem('levpriv_notes', JSON.stringify(stored.slice(0, 50)))
       } catch {
@@ -124,7 +124,7 @@ export default function HomePage() {
     setContent('')
     setPrivateKey('')
     setBurnAfterReading(false)
-    setAttachment(null)
+    setAttachments([])
     setResult(null)
     setError(null)
     setUseCustom(false)
@@ -260,8 +260,8 @@ export default function HomePage() {
           </div>
         </Field>
 
-        <Field label="Record or attach (audio, video, photo, or file - 20MB max)">
-          <AttachmentComposer onAttached={setAttachment} disabled={loading} />
+        <Field label="Record or attach (audio, video, photo, or file - 20MB max each, up to 5)">
+          <AttachmentComposer onAttachmentsChange={setAttachments} disabled={loading} />
         </Field>
 
         <Field label="Expires after">

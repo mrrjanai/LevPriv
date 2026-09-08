@@ -19,24 +19,31 @@ export async function GET(req: NextRequest, { params }: { params: { slug: string
     return NextResponse.json({ error: 'Invalid or expired media link.' }, { status: 403 })
   }
 
-  const note = await redis.get<StoredNote>(noteKey(params.slug))
-  if (!note || !note.attachment) {
+    const note = await redis.get<StoredNote>(noteKey(params.slug))
+  if (!note || note.attachments.length === 0) {
     return NextResponse.json({ error: 'Media not found.' }, { status: 404 })
   }
 
-  const result = await get(note.attachment.blobPathname, { access: 'private' })
+  const indexParam = req.nextUrl.searchParams.get('i')
+  const index = indexParam ? Number(indexParam) : 0
+  const attachment = note.attachments[index]
+  if (!attachment) {
+    return NextResponse.json({ error: 'Media not found.' }, { status: 404 })
+  }
+
+  const result = await get(attachment.blobPathname, { access: 'private' })
   if (!result || result.statusCode !== 200 || !result.stream) {
     return NextResponse.json({ error: 'Media unavailable.' }, { status: 404 })
   }
 
   const headers = new Headers()
-  headers.set('Content-Type', result.blob.contentType || note.attachment.mimeType)
+    headers.set('Content-Type', result.blob.contentType || attachment.mimeType)
   if (result.blob.size) {
     headers.set('Content-Length', String(result.blob.size))
   }
   headers.set(
     'Content-Disposition',
-    `inline; filename="${encodeURIComponent(note.attachment.fileName)}"`
+    `inline; filename="${encodeURIComponent(attachment.fileName)}"`
   )
   headers.set('Cache-Control', 'private, no-store')
   headers.set('X-Content-Type-Options', 'nosniff')

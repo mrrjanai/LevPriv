@@ -4,12 +4,12 @@ import { useEffect, useRef, useState } from 'react'
 import { Mic, Square, Camera, Paperclip, X, Loader2, Music, Video, Image as ImageIcon, File as FileIcon } from 'lucide-react'
 import { CameraCapture } from './CameraCapture'
 import { uploadAttachment } from '@/lib/uploadAttachment'
-import { isAllowedMediaType, detectMediaKind, MAX_MEDIA_BYTES, formatBytes, ALL_ALLOWED_MEDIA_TYPES } from '@/lib/media'
+import { isAllowedMediaType, detectMediaKind, MAX_MEDIA_BYTES, MAX_ATTACHMENTS_PER_NOTE, formatBytes, ALL_ALLOWED_MEDIA_TYPES } from '@/lib/media'
 import type { AttachmentInput } from '@/lib/types'
 import type { MediaKind } from '@/lib/media'
 
 const AUDIO_MIME_CANDIDATES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']
-const MAX_AUDIO_SECONDS = 300 // 5 minute cap
+const MAX_AUDIO_SECONDS = 300
 
 function pickSupportedMimeType(candidates: string[]): string {
   for (const type of candidates) {
@@ -27,22 +27,27 @@ const KIND_ICON: Record<MediaKind, typeof Music> = {
   file: FileIcon,
 }
 
+interface PendingAttachment {
+  id: string
+  kind: MediaKind
+  fileName: string
+  sizeBytes: number
+  status: 'uploading' | 'ready' | 'error'
+  errorMsg?: string
+  result?: AttachmentInput
+}
+
 interface AttachmentComposerProps {
-  onAttached: (attachment: AttachmentInput | null) => void
+  onAttachmentsChange: (attachments: AttachmentInput[]) => void
   disabled?: boolean
 }
 
-type Status = 'idle' | 'recording' | 'uploading' | 'ready' | 'error'
-
-export function AttachmentComposer({ onAttached, disabled }: AttachmentComposerProps) {
-  const [status, setStatus] = useState<Status>('idle')
-  const [kind, setKind] = useState<MediaKind | null>(null)
-  const [fileName, setFileName] = useState('')
-  const [sizeBytes, setSizeBytes] = useState(0)
-  const [errorMsg, setErrorMsg] = useState('')
-  const [showCamera, setShowCamera] = useState(false)
+export function AttachmentComposer({ onAttachmentsChange, disabled }: AttachmentComposerProps) {
+  const [items, setItems] = useState<PendingAttachment[]>([])
+  const [recording, setRecording] = useState(false)
   const [recordSeconds, setRecordSeconds] = useState(0)
-  const [uploadPercent, setUploadPercent] = useState(0)
+  const [showCamera, setShowCamera] = useState(false)
+  const [globalError, setGlobalError] = useState('')
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -57,57 +62,67 @@ export function AttachmentComposer({ onAttached, disabled }: AttachmentComposerP
     }
   }, [])
 
-  async function handleFileReady(fileOrBlob: Blob, name: string, mimeType: string) {
-    setErrorMsg('')
+  // Notify the parent every time the set of successfully-uploaded attachments changes.
+  useEffect(() => {
+    const ready = items.filter((i) => i.status === 'ready' && i.result).map((i) => i.result!)
+    onAttachmentsChange(ready)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items])
 
+  async function handleFileReady(fileOrBlob: Blob, name: string, mimeType: string) {
+    setGlobalError('')
+
+    if (items.length >= MAX_ATTACHMENTS_PER_NOTE) {
+      setGlobalError(`You can attach up to ${MAX_ATTACHMENTS_PER_NOTE} files per note.`)
+      return
+    }
     if (!isAllowedMediaType(mimeType)) {
-      setStatus('error')
-      setErrorMsg('That file type is not supported.')
+      setGlobalError('That file type is not supported.')
       return
     }
     if (fileOrBlob.size > MAX_MEDIA_BYTES) {
-      setStatus('error')
-      setErrorMsg(
-        `File is too large (${formatBytes(MAX_MEDIA_BYTES)} limit, this is ${formatBytes(fileOrBlob.size)}).`
-      )
+      setGlobalError(`File is too large (${formatBytes(MAX_MEDIA_BYTES)} limit, this is ${formatBytes(fileOrBlob.size)}).`)
       return
     }
 
+    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    const kind = detectMediaKind(mimeType)
 
-    const detectedKind = detectMediaKind(mimeType)
-    setKind(detectedKind)
-    setFileName(name)
-    setSizeBytes(fileOrBlob.size)
-    setStatus('uploading')
+    setItems((prev) => [
+      ...prev,
+      { id, kind, fileName: name, sizeBytes: fileOrBlob.size, status: 'uploading' },
+    ])
 
     try {
-      const attachment = await uploadAttachment(fileOrBlob, name, mimeType, setUploadPercent)
-      setStatus('ready')
-      onAttached(attachment)
-    } catch (err) {
-      console.error('Upload error:', err)
-      setStatus('error')
-      setErrorMsg(err instanceof Error ? err.message : 'Upload failed. Please try again.')
-      onAttached(null)
+      const result = await uploadAttachment(fileOrBlob, name, mimeType)
+      setItems((prev) =>
+        prev.map((item) => (item.id === id ? { ...item, status: 'ready', result } : item))
+      )
+    } catch {
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === id ? { ...item, status: 'error', errorMsg: 'Upload failed.' } : item
+        )
+      )
     }
   }
 
-  function handleRemove() {
-    setStatus('idle')
-    setKind(null)
-    setFileName('')
-    setSizeBytes(0)
-    setErrorMsg('')
-    onAttached(null)
+  function handleRemove(id: string) {
+    setItems((prev) => prev.filter((item) => item.id !== id))
   }
 
   async function handleMicClick() {
-    if (status === 'recording') {
+    if (recording) {
       recorderRef.current?.stop()
       return
     }
 
-    setErrorMsg('')
+    setGlobalError('')
+    if (items.length >= MAX_ATTACHMENTS_PER_NOTE) {
+      setGlobalError(`You can attach up to ${MAX_ATTACHMENTS_PER_NOTE} files per note.`)
+      return
+    }
+
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       streamRef.current = stream
@@ -123,24 +138,21 @@ export function AttachmentComposer({ onAttached, disabled }: AttachmentComposerP
         if (timerRef.current) clearInterval(timerRef.current)
         const blob = new Blob(chunksRef.current, { type: mimeType })
         handleFileReady(blob, `voice-note-${Date.now()}.webm`, mimeType)
+        setRecording(false)
       }
 
       recorder.start()
       recorderRef.current = recorder
-      setStatus('recording')
+      setRecording(true)
       setRecordSeconds(0)
       timerRef.current = setInterval(() => {
         setRecordSeconds((s) => {
-          if (s + 1 >= MAX_AUDIO_SECONDS) {
-            recorder.stop()
-          }
+          if (s + 1 >= MAX_AUDIO_SECONDS) recorder.stop()
           return s + 1
         })
       }, 1000)
-    } catch (err) {
-      console.error('Mic error:', err)
-      setStatus('error')
-      setErrorMsg('Could not access your microphone. Check permissions and try again.')
+    } catch {
+      setGlobalError('Could not access your microphone. Check permissions and try again.')
     }
   }
 
@@ -150,24 +162,59 @@ export function AttachmentComposer({ onAttached, disabled }: AttachmentComposerP
     e.target.value = ''
   }
 
-  const KindIcon = kind ? KIND_ICON[kind] : null
-  const hasAttachment = status === 'ready' || status === 'uploading'
+  const atCap = items.length >= MAX_ATTACHMENTS_PER_NOTE
 
   return (
     <div>
-      {!hasAttachment && (
+      {items.length > 0 && (
+        <div className="space-y-2 mb-3">
+          {items.map((item) => {
+            const KindIcon = KIND_ICON[item.kind]
+            return (
+              <div
+                key={item.id}
+                className="flex items-center gap-3 border border-base-border rounded-md px-4 py-3"
+              >
+                <KindIcon size={16} className="text-base-muted shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm text-base-white truncate">{item.fileName}</p>
+                  <p className="text-xs text-base-muted">
+                    {item.status === 'uploading' && 'Uploading…'}
+                    {item.status === 'ready' && formatBytes(item.sizeBytes)}
+                    {item.status === 'error' && (item.errorMsg || 'Upload failed')}
+                  </p>
+                </div>
+                {item.status === 'uploading' ? (
+                  <Loader2 size={16} className="animate-spin text-base-muted shrink-0" />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleRemove(item.id)}
+                    aria-label="Remove attachment"
+                    className="text-base-muted hover:text-base-white transition-colors shrink-0"
+                  >
+                    <X size={16} />
+                  </button>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {!atCap && (
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={handleMicClick}
             disabled={disabled}
             className={`flex items-center gap-1.5 text-xs px-3 py-2 rounded-md border transition-colors disabled:opacity-40 ${
-              status === 'recording'
+              recording
                 ? 'bg-base-white text-base-black border-base-white'
                 : 'border-base-border text-base-muted hover:text-base-white hover:border-base-mid'
             }`}
           >
-            {status === 'recording' ? (
+            {recording ? (
               <>
                 <Square size={13} />
                 {Math.floor(recordSeconds / 60)}:{String(recordSeconds % 60).padStart(2, '0')}
@@ -182,7 +229,7 @@ export function AttachmentComposer({ onAttached, disabled }: AttachmentComposerP
           <button
             type="button"
             onClick={() => setShowCamera(true)}
-            disabled={disabled || status === 'recording'}
+            disabled={disabled || recording}
             className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-md border border-base-border text-base-muted hover:text-base-white hover:border-base-mid transition-colors disabled:opacity-40"
           >
             <Camera size={13} /> Camera
@@ -191,7 +238,7 @@ export function AttachmentComposer({ onAttached, disabled }: AttachmentComposerP
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            disabled={disabled || status === 'recording'}
+            disabled={disabled || recording}
             className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-md border border-base-border text-base-muted hover:text-base-white hover:border-base-mid transition-colors disabled:opacity-40"
           >
             <Paperclip size={13} /> Attach file
@@ -207,31 +254,13 @@ export function AttachmentComposer({ onAttached, disabled }: AttachmentComposerP
         </div>
       )}
 
-      {hasAttachment && KindIcon && (
-        <div className="flex items-center gap-3 border border-base-border rounded-md px-4 py-3">
-          <KindIcon size={16} className="text-base-muted shrink-0" />
-          <div className="min-w-0 flex-1">
-            <p className="text-sm text-base-white truncate">{fileName}</p>
-            <p className="text-xs text-base-muted">
-              {status === 'uploading' ? `Uploading... ${uploadPercent}%` : formatBytes(sizeBytes)}
-            </p>
-          </div>
-          {status === 'uploading' ? (
-            <Loader2 size={16} className="animate-spin text-base-muted shrink-0" />
-          ) : (
-            <button
-              type="button"
-              onClick={handleRemove}
-              aria-label="Remove attachment"
-              className="text-base-muted hover:text-base-white transition-colors shrink-0"
-            >
-              <X size={16} />
-            </button>
-          )}
-        </div>
+      {atCap && (
+        <p className="text-xs text-base-muted">
+          Maximum of {MAX_ATTACHMENTS_PER_NOTE} attachments reached.
+        </p>
       )}
 
-      {errorMsg && <p className="text-xs text-base-white mt-2">{errorMsg}</p>}
+      {globalError && <p className="text-xs text-base-white mt-2">{globalError}</p>}
 
       {showCamera && (
         <CameraCapture

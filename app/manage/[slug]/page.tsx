@@ -201,10 +201,10 @@ function ManagePageInner() {
               <Row label="Views" value={String(meta.views ?? 0)} />
               <Row label="Protected with private key" value={meta.hasPrivateKey ? 'Yes' : 'No'} />
               <Row label="Deletes after first read" value={meta.burnAfterReading ? 'Yes' : 'No'} />
-              {meta.attachment && (
+              {meta.attachments && meta.attachments.length > 0 && (
                 <Row
-                  label="Attachment"
-                  value={`${meta.attachment.kind} · ${meta.attachment.fileName}`}
+                  label={`Attachment${meta.attachments.length > 1 ? 's' : ''}`}
+                  value={meta.attachments.map((a) => a.fileName).join(', ')}
                 />
               )}
             </dl>

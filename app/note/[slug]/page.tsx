@@ -28,7 +28,7 @@ export default function NoteViewerPage() {
   const [remainingMs, setRemainingMs] = useState<number | null>(null)
   const [views, setViews] = useState<number | null>(null)
   const [burned, setBurned] = useState(false)
-  const [attachment, setAttachment] = useState<PublicAttachmentMeta | null>(null)
+  const [attachments, setAttachments] = useState<PublicAttachmentMeta[]>([])
   const [mediaToken, setMediaToken] = useState<string | null>(null)
   const [watermark, setWatermark] = useState<ViewWatermark | null>(null)
 
@@ -55,7 +55,7 @@ export default function NoteViewerPage() {
       setContent(data.content)
       setViews(data.views)
       setBurned(Boolean(data.burned))
-      setAttachment(data.attachment ?? null)
+      setAttachments(data.attachments ?? [])
       setMediaToken(data.mediaToken ?? null)
       setWatermark(data.watermark ?? null)
       setState('revealed')
@@ -173,12 +173,15 @@ export default function NoteViewerPage() {
               </div>
             )}
 
-            {attachment && mediaToken && (
-              <div className="mb-4">
-                <AttachmentPlayer
-                  attachment={attachment}
-                  mediaSrc={`/api/notes/${slug}/media?vt=${encodeURIComponent(mediaToken)}`}
-                />
+                        {attachments.length > 0 && mediaToken && (
+              <div className="space-y-3 mb-4">
+                {attachments.map((attachment, index) => (
+                  <AttachmentPlayer
+                    key={index}
+                    attachment={attachment}
+                    mediaSrc={`/api/notes/${slug}/media?vt=${encodeURIComponent(mediaToken)}&i=${index}`}
+                  />
+                ))}
               </div>
             )}
 

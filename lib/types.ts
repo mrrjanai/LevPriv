@@ -26,7 +26,7 @@ export interface CreateNoteRequest {
   durationSeconds: number
   privateKey?: string
   burnAfterReading?: boolean
-  attachment?: AttachmentInput
+  attachments?: AttachmentInput[]
   website?: string
   formRenderedAt?: number
 }
@@ -38,7 +38,7 @@ export interface CreateNoteResponse {
   manageUrl: string
   expiresAt: number
   hasPrivateKey: boolean
-  hasAttachment: boolean
+  attachmentCount: number
 }
 
 export interface StoredNote {
@@ -49,7 +49,7 @@ export interface StoredNote {
   salt: string | null
   hasPrivateKey: boolean
   burnAfterReading: boolean
-  attachment: StoredAttachment | null
+  attachments: StoredAttachment[]
   ownerTokenHash: string
   createdAt: number
   expiresAt: number
@@ -63,7 +63,7 @@ export interface NotePublicMeta {
   deleted: boolean
   hasPrivateKey: boolean
   burnAfterReading?: boolean
-  attachment?: PublicAttachmentMeta | null
+  attachments?: PublicAttachmentMeta[]
   expiresAt?: number
   createdAt?: number
   views?: number
@@ -81,7 +81,7 @@ export interface RevealNoteResponse {
   createdAt: number
   expiresAt: number
   burned: boolean
-  attachment: PublicAttachmentMeta | null
+  attachments: PublicAttachmentMeta[]
   mediaToken: string | null
   watermark: ViewWatermark
 }
@@ -100,5 +100,5 @@ export interface LocalNoteRecord {
   createdAt: number
   expiresAt: number
   hasPrivateKey: boolean
-  hasAttachment?: boolean
+  attachmentCount?: number
 }

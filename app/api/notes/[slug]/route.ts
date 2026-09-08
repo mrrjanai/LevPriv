@@ -30,15 +30,20 @@ function isExpired(note: StoredNote): boolean {
   return Date.now() >= note.expiresAt
 }
 
-function toPublicAttachment(note: StoredNote): PublicAttachmentMeta | null {
-  if (!note.attachment) return null
-  const { kind, mimeType, fileName, sizeBytes } = note.attachment
-  return { kind, mimeType, fileName, sizeBytes }
+function toPublicAttachments(note: StoredNote): PublicAttachmentMeta[] {
+  return note.attachments.map(({ kind, mimeType, fileName, sizeBytes }) => ({
+    kind,
+    mimeType,
+    fileName,
+    sizeBytes,
+  }))
 }
 
 async function cleanupIfGone(note: StoredNote | null): Promise<void> {
-  if (note && (note.deleted || isExpired(note)) && note.attachment) {
-    await deleteBlobSafely(note.attachment.blobPathname)
+  if (note && (note.deleted || isExpired(note)) && note.attachments.length > 0) {
+    await Promise.all(
+      note.attachments.map((a) => deleteBlobSafely(a.blobPathname))
+    )
   }
 }
 
@@ -71,7 +76,7 @@ export async function GET(req: NextRequest, { params }: { params: { slug: string
     deleted: false,
     hasPrivateKey: note.hasPrivateKey,
     burnAfterReading: note.burnAfterReading,
-    attachment: toPublicAttachment(note),
+    attachments: toPublicAttachments(note),
     expiresAt: note.expiresAt,
     createdAt: note.createdAt,
     views: isOwner ? note.views : undefined,
@@ -135,11 +140,16 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
         })
       : ''
 
-    const mediaToken = note.attachment ? issueMediaToken(params.slug) : null
-    const attachmentMeta = toPublicAttachment(note)
+        const mediaToken = note.attachments.length > 0 ? issueMediaToken(params.slug) : null
+    const attachmentsMeta = toPublicAttachments(note)
     const watermark = { ip, viewedAt: Date.now(), viewId: generateViewId() }
 
     if (note.burnAfterReading) {
+      // Destroy the note record immediately. Attachment blobs (if any) are
+      // intentionally NOT deleted here - the media token above is only
+      // valid for a short window, and deleting the files now would break
+      // this very first (and only allowed) playback. They get cleaned up
+      // lazily on the next request that touches this slug, once it's gone.
       await redis.del(noteKey(params.slug))
 
       const response: RevealNoteResponse = {
@@ -148,7 +158,7 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
         createdAt: note.createdAt,
         expiresAt: note.expiresAt,
         burned: true,
-        attachment: attachmentMeta,
+        attachments: attachmentsMeta,
         mediaToken,
         watermark,
       }
@@ -159,16 +169,17 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
     const remainingTtlSeconds = Math.max(1, Math.ceil((note.expiresAt - Date.now()) / 1000))
     await redis.set(noteKey(params.slug), updated, { ex: remainingTtlSeconds })
 
-    const response: RevealNoteResponse = {
+        const response: RevealNoteResponse = {
       content,
       views: updated.views,
       createdAt: note.createdAt,
       expiresAt: note.expiresAt,
       burned: false,
-      attachment: attachmentMeta,
+      attachments: attachmentsMeta,
       mediaToken,
       watermark,
     }
+
     return NextResponse.json(response, { status: 200 })
   } catch (err) {
     await sleep(300 + Math.floor(Math.random() * 300))
@@ -224,9 +235,9 @@ export async function DELETE(req: NextRequest, { params }: { params: { slug: str
     return NextResponse.json({ error: 'Not authorized to delete this note.' }, { status: 403 })
   }
 
-  await redis.del(noteKey(params.slug))
-  if (note.attachment) {
-    await deleteBlobSafely(note.attachment.blobPathname)
+    await redis.del(noteKey(params.slug))
+  if (note.attachments.length > 0) {
+    await Promise.all(note.attachments.map((a) => deleteBlobSafely(a.blobPathname)))
   }
 
   return NextResponse.json({ deleted: true }, { status: 200 })

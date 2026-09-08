@@ -4,7 +4,7 @@ import { encryptContent, sha256Hex, generateOwnerToken } from '@/lib/crypto'
 import { generateSlug } from '@/lib/slug'
 import { isValidDuration, MAX_CONTENT_LENGTH } from '@/lib/duration'
 import { createLimiter, getClientIp } from '@/lib/ratelimit'
-import { isAllowedMediaType, detectMediaKind, MAX_MEDIA_BYTES } from '@/lib/media'
+import { isAllowedMediaType, detectMediaKind, MAX_MEDIA_BYTES, MAX_ATTACHMENTS_PER_NOTE } from '@/lib/media'
 import { deleteBlobSafely } from '@/lib/blob'
 import type { CreateNoteRequest, CreateNoteResponse, StoredNote, StoredAttachment } from '@/lib/types'
 
@@ -56,11 +56,21 @@ export async function POST(req: NextRequest) {
       )
     }
 
+
+    const incomingAttachments = body.attachments ?? []
+    if (incomingAttachments.length > MAX_ATTACHMENTS_PER_NOTE) {
+      return NextResponse.json(
+        { error: `A note can have at most ${MAX_ATTACHMENTS_PER_NOTE} attachments.` },
+        { status: 400 }
+      )
+    }
+
     if (
       !body ||
       typeof body.content !== 'string' ||
-      (body.content.trim().length === 0 && !body.attachment)
+      (body.content.trim().length === 0 && incomingAttachments.length === 0)
     ) {
+
       return NextResponse.json(
         { error: 'Add some text or an attachment before creating the note.' },
         { status: 400 }
@@ -79,9 +89,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Private key is too long.' }, { status: 400 })
     }
 
-    let storedAttachment: StoredAttachment | null = null
-    if (body.attachment) {
-      const { blobUrl, blobPathname, mimeType, fileName, sizeBytes } = body.attachment
+
+    const storedAttachments: StoredAttachment[] = []
+    for (const attachment of incomingAttachments) {
+      const { blobUrl, blobPathname, mimeType, fileName, sizeBytes } = attachment
       if (!blobUrl || !blobPathname || !mimeType || !fileName || !Number.isFinite(sizeBytes)) {
         return NextResponse.json({ error: 'Invalid attachment data.' }, { status: 400 })
       }
@@ -89,20 +100,23 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'That file type is not supported.' }, { status: 400 })
       }
       if (sizeBytes > MAX_MEDIA_BYTES) {
-        await deleteBlobSafely(blobPathname)
-       return NextResponse.json(
+        // Reject and clean up every already-uploaded blob in this batch -
+        // the client uploads directly to Blob before this validation runs,
+        // so stray oversized files could otherwise be left orphaned.
+        await Promise.all(incomingAttachments.map((a) => deleteBlobSafely(a.blobPathname)))
+        return NextResponse.json(
           { error: `Attachment is too large (${Math.round(MAX_MEDIA_BYTES / (1024 * 1024))}MB limit).` },
           { status: 400 }
         )
       }
-      storedAttachment = {
+      storedAttachments.push({
         blobUrl,
         blobPathname,
         mimeType,
         fileName: fileName.slice(0, 200),
         sizeBytes,
         kind: detectMediaKind(mimeType),
-      }
+      })
     }
 
     const cleanContent = sanitize(body.content)
@@ -121,7 +135,7 @@ export async function POST(req: NextRequest) {
       slug = generateSlug()
     }
 
-    const note: StoredNote = {
+        const note: StoredNote = {
       slug,
       cipherText,
       iv,
@@ -129,7 +143,7 @@ export async function POST(req: NextRequest) {
       salt,
       hasPrivateKey: Boolean(body.privateKey),
       burnAfterReading: Boolean(body.burnAfterReading),
-      attachment: storedAttachment,
+      attachments: storedAttachments,
       ownerTokenHash,
       createdAt: now,
       expiresAt,
@@ -141,14 +155,14 @@ export async function POST(req: NextRequest) {
 
         const appUrl = (process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin).replace(/\/+$/, '')
 
-    const response: CreateNoteResponse = {
+        const response: CreateNoteResponse = {
       slug,
       ownerToken,
       url: `${appUrl}/note/${slug}`,
       manageUrl: `${appUrl}/manage/${slug}?token=${ownerToken}`,
       expiresAt,
       hasPrivateKey: note.hasPrivateKey,
-      hasAttachment: Boolean(storedAttachment),
+      attachmentCount: storedAttachments.length,
     }
 
     return NextResponse.json(response, { status: 201 })
