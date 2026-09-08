@@ -15,6 +15,7 @@ export const MIN_DURATION_SECONDS = 60 // 1 minute floor
 export const MAX_DURATION_SECONDS = 30 * 24 * 60 * 60 // 30 day ceiling
 export const MAX_CONTENT_LENGTH = 20_000 // characters
 export const CONTENT_LENGTH_WARNING_THRESHOLD = 0.9 // 90% of max triggers warning color
+export const DELETE_GRACE_PERIOD_MS = 10_000 // 10 seconds to undo a delete
 
 export const EXTEND_PRESETS: DurationPreset[] = [
   { label: '+10 minutes', seconds: 10 * 60 },

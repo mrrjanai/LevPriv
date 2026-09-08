@@ -55,6 +55,7 @@ export interface StoredNote {
   expiresAt: number
   views: number
   deleted: boolean
+  deletionScheduledAt: number | null
 }
 
 export interface NotePublicMeta {
@@ -67,6 +68,7 @@ export interface NotePublicMeta {
   expiresAt?: number
   createdAt?: number
   views?: number
+  deletionScheduledAt?: number | null
 }
 
 export interface ViewWatermark {
@@ -87,11 +89,19 @@ export interface RevealNoteResponse {
 }
 
 export interface ExtendNoteRequest {
-  additionalSeconds: number
+  additionalSeconds?: number
+  cancelDeletion?: boolean
 }
 
 export interface ExtendNoteResponse {
-  expiresAt: number
+  expiresAt?: number
+  cancelled?: boolean
+}
+
+export interface DeleteNoteResponse {
+  scheduled?: boolean
+  deleted?: boolean
+  deleteAt?: number
 }
 
 export interface LocalNoteRecord {

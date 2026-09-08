@@ -149,6 +149,7 @@ export async function POST(req: NextRequest) {
       expiresAt,
       views: 0,
       deleted: false,
+      deletionScheduledAt: null,
     }
 
     await redis.set(noteKey(slug), note, { ex: body.durationSeconds })

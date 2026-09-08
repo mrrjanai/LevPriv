@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { redis, noteKey } from '@/lib/redis'
 import { decryptContent, sha256Hex } from '@/lib/crypto'
 import { viewLimiter, wrongKeyLimiter, getClientIp } from '@/lib/ratelimit'
-import { MAX_DURATION_SECONDS } from '@/lib/duration'
+import { MAX_DURATION_SECONDS, DELETE_GRACE_PERIOD_MS } from '@/lib/duration'
 import { issueMediaToken } from '@/lib/mediaToken'
 import { deleteBlobSafely } from '@/lib/blob'
 import { generateViewId } from '@/lib/crypto'
@@ -11,6 +11,7 @@ import type {
   NotePublicMeta,
   ExtendNoteRequest,
   ExtendNoteResponse,
+  DeleteNoteResponse,
   RevealNoteResponse,
   PublicAttachmentMeta,
 } from '@/lib/types'
@@ -30,6 +31,14 @@ function isExpired(note: StoredNote): boolean {
   return Date.now() >= note.expiresAt
 }
 
+function isPendingDeletion(note: StoredNote): boolean {
+  return note.deletionScheduledAt !== null
+}
+
+function isDeletionDue(note: StoredNote): boolean {
+  return note.deletionScheduledAt !== null && Date.now() >= note.deletionScheduledAt
+}
+
 function toPublicAttachments(note: StoredNote): PublicAttachmentMeta[] {
   return note.attachments.map(({ kind, mimeType, fileName, sizeBytes }) => ({
     kind,
@@ -39,11 +48,17 @@ function toPublicAttachments(note: StoredNote): PublicAttachmentMeta[] {
   }))
 }
 
+// Lazy finalization: whenever any route touches a note that's expired,
+// hard-deleted, or past its undo grace period, actually remove it and clean
+// up its attachments. No cron needed - the next real access to this slug,
+// by anyone, triggers the real cleanup.
 async function cleanupIfGone(note: StoredNote | null): Promise<void> {
-  if (note && (note.deleted || isExpired(note)) && note.attachments.length > 0) {
-    await Promise.all(
-      note.attachments.map((a) => deleteBlobSafely(a.blobPathname))
-    )
+  if (!note) return
+  if (note.deleted || isExpired(note) || isDeletionDue(note)) {
+    if (note.attachments.length > 0) {
+      await Promise.all(note.attachments.map((a) => deleteBlobSafely(a.blobPathname)))
+    }
+    await redis.del(noteKey(note.slug))
   }
 }
 
@@ -57,29 +72,33 @@ export async function GET(req: NextRequest, { params }: { params: { slug: string
   const note = await loadNote(params.slug)
   await cleanupIfGone(note)
 
-  if (!note || note.deleted || isExpired(note)) {
+  const token = req.nextUrl.searchParams.get('token')
+  const isOwner = Boolean(note && token && sha256Hex(token) === note.ownerTokenHash)
+
+  const trulyGone = !note || note.deleted || isExpired(note) || isDeletionDue(note)
+  const hiddenFromNonOwner = note ? isPendingDeletion(note) && !isDeletionDue(note) && !isOwner : false
+
+  if (trulyGone || hiddenFromNonOwner) {
     const meta: NotePublicMeta = {
       exists: false,
       expired: note ? isExpired(note) : true,
-      deleted: note?.deleted ?? false,
+      deleted: note ? note.deleted || isDeletionDue(note) : false,
       hasPrivateKey: false,
     }
     return NextResponse.json(meta, { status: 200 })
   }
 
-  const token = req.nextUrl.searchParams.get('token')
-  const isOwner = Boolean(token && sha256Hex(token) === note.ownerTokenHash)
-
   const meta: NotePublicMeta = {
     exists: true,
     expired: false,
     deleted: false,
-    hasPrivateKey: note.hasPrivateKey,
-    burnAfterReading: note.burnAfterReading,
-    attachments: toPublicAttachments(note),
-    expiresAt: note.expiresAt,
-    createdAt: note.createdAt,
-    views: isOwner ? note.views : undefined,
+    hasPrivateKey: note!.hasPrivateKey,
+    burnAfterReading: note!.burnAfterReading,
+    attachments: toPublicAttachments(note!),
+    expiresAt: note!.expiresAt,
+    createdAt: note!.createdAt,
+    views: isOwner ? note!.views : undefined,
+    deletionScheduledAt: isOwner ? note!.deletionScheduledAt : undefined,
   }
 
   return NextResponse.json(meta, { status: 200 })
@@ -95,7 +114,9 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
   const note = await loadNote(params.slug)
   await cleanupIfGone(note)
 
-  if (!note || note.deleted || isExpired(note)) {
+  // A note pending deletion is hidden from viewers immediately - deleting
+  // should feel instant to everyone except the owner, who alone can undo it.
+  if (!note || note.deleted || isExpired(note) || isPendingDeletion(note)) {
     return NextResponse.json(
       { error: 'This note has self-destructed or never existed.' },
       { status: 404 }
@@ -140,16 +161,11 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
         })
       : ''
 
-        const mediaToken = note.attachments.length > 0 ? issueMediaToken(params.slug) : null
+    const mediaToken = note.attachments.length > 0 ? issueMediaToken(params.slug) : null
     const attachmentsMeta = toPublicAttachments(note)
     const watermark = { ip, viewedAt: Date.now(), viewId: generateViewId() }
 
     if (note.burnAfterReading) {
-      // Destroy the note record immediately. Attachment blobs (if any) are
-      // intentionally NOT deleted here - the media token above is only
-      // valid for a short window, and deleting the files now would break
-      // this very first (and only allowed) playback. They get cleaned up
-      // lazily on the next request that touches this slug, once it's gone.
       await redis.del(noteKey(params.slug))
 
       const response: RevealNoteResponse = {
@@ -169,7 +185,7 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
     const remainingTtlSeconds = Math.max(1, Math.ceil((note.expiresAt - Date.now()) / 1000))
     await redis.set(noteKey(params.slug), updated, { ex: remainingTtlSeconds })
 
-        const response: RevealNoteResponse = {
+    const response: RevealNoteResponse = {
       content,
       views: updated.views,
       createdAt: note.createdAt,
@@ -179,7 +195,6 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
       mediaToken,
       watermark,
     }
-
     return NextResponse.json(response, { status: 200 })
   } catch (err) {
     await sleep(300 + Math.floor(Math.random() * 300))
@@ -192,7 +207,9 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
 
 export async function PATCH(req: NextRequest, { params }: { params: { slug: string } }) {
   const note = await loadNote(params.slug)
-  if (!note || note.deleted || isExpired(note)) {
+  await cleanupIfGone(note)
+
+  if (!note || note.deleted || isExpired(note) || isDeletionDue(note)) {
     return NextResponse.json({ error: 'Note not found.' }, { status: 404 })
   }
 
@@ -208,12 +225,27 @@ export async function PATCH(req: NextRequest, { params }: { params: { slug: stri
     return NextResponse.json({ error: 'Invalid request body.' }, { status: 400 })
   }
 
-  if (!Number.isFinite(body.additionalSeconds) || body.additionalSeconds <= 0) {
+  if (body.cancelDeletion) {
+    if (!isPendingDeletion(note) || isDeletionDue(note)) {
+      return NextResponse.json(
+        { error: 'Too late to undo - this note has already been deleted.' },
+        { status: 410 }
+      )
+    }
+    const updated: StoredNote = { ...note, deletionScheduledAt: null }
+    const ttlSeconds = Math.max(1, Math.ceil((note.expiresAt - Date.now()) / 1000))
+    await redis.set(noteKey(params.slug), updated, { ex: ttlSeconds })
+
+    const response: ExtendNoteResponse = { cancelled: true }
+    return NextResponse.json(response, { status: 200 })
+  }
+
+  if (!Number.isFinite(body.additionalSeconds) || (body.additionalSeconds ?? 0) <= 0) {
     return NextResponse.json({ error: 'Invalid extension amount.' }, { status: 400 })
   }
 
   const maxAllowedExpiry = note.createdAt + MAX_DURATION_SECONDS * 1000
-  const newExpiresAt = Math.min(note.expiresAt + body.additionalSeconds * 1000, maxAllowedExpiry)
+  const newExpiresAt = Math.min(note.expiresAt + body.additionalSeconds! * 1000, maxAllowedExpiry)
 
   const updated: StoredNote = { ...note, expiresAt: newExpiresAt }
   const newTtlSeconds = Math.max(1, Math.ceil((newExpiresAt - Date.now()) / 1000))
@@ -235,10 +267,22 @@ export async function DELETE(req: NextRequest, { params }: { params: { slug: str
     return NextResponse.json({ error: 'Not authorized to delete this note.' }, { status: 403 })
   }
 
-    await redis.del(noteKey(params.slug))
-  if (note.attachments.length > 0) {
-    await Promise.all(note.attachments.map((a) => deleteBlobSafely(a.blobPathname)))
+  if (isPendingDeletion(note) && isDeletionDue(note)) {
+    // Already past its grace period - finalize immediately instead of
+    // scheduling again (covers a rare double-click race).
+    await cleanupIfGone(note)
+    const response: DeleteNoteResponse = { deleted: true }
+    return NextResponse.json(response, { status: 200 })
   }
 
-  return NextResponse.json({ deleted: true }, { status: 200 })
+  const deleteAt = Date.now() + DELETE_GRACE_PERIOD_MS
+  const updated: StoredNote = { ...note, deletionScheduledAt: deleteAt }
+  const ttlSeconds = Math.max(
+    Math.ceil(DELETE_GRACE_PERIOD_MS / 1000) + 5,
+    Math.ceil((note.expiresAt - Date.now()) / 1000)
+  )
+  await redis.set(noteKey(params.slug), updated, { ex: ttlSeconds })
+
+  const response: DeleteNoteResponse = { scheduled: true, deleteAt }
+  return NextResponse.json(response, { status: 200 })
 }

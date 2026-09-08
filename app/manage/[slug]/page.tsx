@@ -10,7 +10,7 @@ import { DestructIcon } from '@/components/icons/DestructIcon'
 import { SuccessTick } from '@/components/icons/SuccessTick'
 import { PadlockIcon } from '@/components/icons/PadlockIcon'
 
-type PageState = 'loading' | 'ready' | 'deleted' | 'gone' | 'unauthorized'
+type PageState = 'loading' | 'ready' | 'pending-deletion' | 'deleted' | 'gone' | 'unauthorized'
 
 export default function ManagePage() {
   return (
@@ -35,8 +35,10 @@ function ManagePageInner() {
   const [state, setState] = useState<PageState>('loading')
   const [meta, setMeta] = useState<NotePublicMeta | null>(null)
   const [remaining, setRemaining] = useState('')
-  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [deleteAt, setDeleteAt] = useState<number | null>(null)
+  const [undoRemaining, setUndoRemaining] = useState('')
   const [deleting, setDeleting] = useState(false)
+  const [undoing, setUndoing] = useState(false)
   const [extending, setExtending] = useState<number | null>(null)
   const { message: toastMessage, showToast } = useToast()
 
@@ -72,7 +74,12 @@ function ManagePageInner() {
       return
     }
     setMeta(data)
-    setState('ready')
+    if (data.deletionScheduledAt) {
+      setDeleteAt(data.deletionScheduledAt)
+      setState('pending-deletion')
+    } else {
+      setState('ready')
+    }
   }, [slug, token])
 
   useEffect(() => {
@@ -99,6 +106,22 @@ function ManagePageInner() {
     return () => clearInterval(interval)
   }, [meta?.expiresAt])
 
+  useEffect(() => {
+    if (state !== 'pending-deletion' || !deleteAt) return
+    const tick = () => {
+      const ms = deleteAt - Date.now()
+      if (ms <= 0) {
+        setUndoRemaining('0s')
+        setState('deleted')
+        return
+      }
+      setUndoRemaining(`${Math.ceil(ms / 1000)}s`)
+    }
+    tick()
+    const interval = setInterval(tick, 250)
+    return () => clearInterval(interval)
+  }, [state, deleteAt])
+
   async function handleDelete() {
     if (!token) return
     setDeleting(true)
@@ -106,14 +129,41 @@ function ManagePageInner() {
       const res = await fetch(`/api/notes/${slug}?token=${encodeURIComponent(token)}`, {
         method: 'DELETE',
       })
-      if (res.ok) {
-        showToast('Note permanently deleted')
+      const data = await res.json()
+      if (res.ok && data.scheduled) {
+        setDeleteAt(data.deleteAt)
+        setState('pending-deletion')
+        showToast('Deleting shortly - you can still undo')
+      } else if (res.ok && data.deleted) {
         setState('deleted')
       } else {
         showToast('Failed to delete note')
       }
     } finally {
       setDeleting(false)
+    }
+  }
+
+  async function handleUndo() {
+    if (!token) return
+    setUndoing(true)
+    try {
+      const res = await fetch(`/api/notes/${slug}?token=${encodeURIComponent(token)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cancelDeletion: true }),
+      })
+      const data = await res.json()
+      if (res.ok && data.cancelled) {
+        showToast('Deletion cancelled')
+        setDeleteAt(null)
+        await fetchMeta()
+      } else {
+        showToast(data.error || 'Too late to undo')
+        setState('deleted')
+      }
+    } finally {
+      setUndoing(false)
     }
   }
 
@@ -167,7 +217,8 @@ function ManagePageInner() {
                 ? 'It has been permanently removed and is no longer accessible.'
                 : 'Its time simply ran out.'}
             </p>
-            <a
+             
+             <a
               href="/"
               className="inline-block mt-8 border border-base-border rounded-md px-5 py-2.5 text-sm hover:border-base-mid transition-colors"
             >
@@ -176,13 +227,28 @@ function ManagePageInner() {
           </div>
         )}
 
-        {state === 'ready' && meta && (
+        {(state === 'ready' || state === 'pending-deletion') && meta && (
           <div>
             <h1 className="text-xl font-medium mb-1">Note management</h1>
             <p className="text-base-muted text-sm mb-8">Slug: {slug}</p>
 
+            {state === 'pending-deletion' && (
+              <div className="flex items-center justify-between gap-3 bg-base-near border border-base-border rounded-md px-4 py-3 mb-8">
+                <span className="text-sm text-base-white">
+                  Deleting in {undoRemaining}
+                </span>
+                <button
+                  onClick={handleUndo}
+                  disabled={undoing}
+                  className="text-sm font-medium text-base-white underline hover:text-base-muted transition-colors disabled:opacity-50"
+                >
+                  {undoing ? 'Undoing…' : 'Undo'}
+                </button>
+              </div>
+            )}
+
             <dl className="space-y-4 mb-8">
-              <Row label="Status" value="Active" />
+              <Row label="Status" value={state === 'pending-deletion' ? 'Pending deletion' : 'Active'} />
               <Row
                 label="Created"
                 value={new Date(meta.createdAt!).toLocaleString(undefined, {
@@ -209,52 +275,34 @@ function ManagePageInner() {
               )}
             </dl>
 
-            <div className="mb-8">
-              <label className="block text-xs uppercase tracking-wide text-base-muted mb-2">
-                Extend expiration
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                {EXTEND_PRESETS.map((preset) => (
-                  <button
-                    key={preset.label}
-                    onClick={() => handleExtend(preset.seconds)}
-                    disabled={extending !== null}
-                    className="text-sm rounded-md py-2.5 border border-base-border text-base-muted hover:text-base-white hover:border-base-mid transition-colors disabled:opacity-50"
-                  >
-                    {extending === preset.seconds ? '…' : preset.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {!confirmingDelete ? (
-              <button
-                onClick={() => setConfirmingDelete(true)}
-                className="w-full border border-base-border rounded-md py-3 text-sm text-base-white hover:border-base-mid transition-colors"
-              >
-                Delete note now
-              </button>
-            ) : (
-              <div className="space-y-2">
-                <p className="text-sm text-base-muted text-center mb-2">
-                  This can't be undone. Delete permanently?
-                </p>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setConfirmingDelete(false)}
-                    className="flex-1 border border-base-border rounded-md py-3 text-sm hover:border-base-mid transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleDelete}
-                    disabled={deleting}
-                    className="flex-1 bg-base-white text-base-black rounded-md py-3 text-sm font-medium hover:bg-base-muted transition-colors disabled:opacity-50"
-                  >
-                    {deleting ? 'Deleting…' : 'Confirm delete'}
-                  </button>
+            {state === 'ready' && (
+              <>
+                <div className="mb-8">
+                  <label className="block text-xs uppercase tracking-wide text-base-muted mb-2">
+                    Extend expiration
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {EXTEND_PRESETS.map((preset) => (
+                      <button
+                        key={preset.label}
+                        onClick={() => handleExtend(preset.seconds)}
+                        disabled={extending !== null}
+                        className="text-sm rounded-md py-2.5 border border-base-border text-base-muted hover:text-base-white hover:border-base-mid transition-colors disabled:opacity-50"
+                      >
+                        {extending === preset.seconds ? '…' : preset.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
+
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="w-full border border-base-border rounded-md py-3 text-sm text-base-white hover:border-base-mid transition-colors disabled:opacity-50"
+                >
+                  {deleting ? 'Deleting…' : 'Delete note now'}
+                </button>
+              </>
             )}
           </div>
         )}
