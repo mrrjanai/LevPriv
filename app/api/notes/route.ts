@@ -135,7 +135,7 @@ export async function POST(req: NextRequest) {
       slug = generateSlug()
     }
 
-        const note: StoredNote = {
+    const note: StoredNote = {
       slug,
       cipherText,
       iv,
@@ -143,6 +143,8 @@ export async function POST(req: NextRequest) {
       salt,
       hasPrivateKey: Boolean(body.privateKey),
       burnAfterReading: Boolean(body.burnAfterReading),
+      viewerMode: body.viewerMode === 'single' ? 'single' : 'multiple',
+      claimedByHash: null,
       attachments: storedAttachments,
       ownerTokenHash,
       createdAt: now,

@@ -11,7 +11,7 @@ import { AttachmentPlayer } from '@/components/AttachmentPlayer'
 import { ProtectedText } from '@/components/ProtectedText'
 import { AlertTriangle } from 'lucide-react'
 
-type ViewState = 'loading' | 'need-key' | 'revealed' | 'gone' | 'error'
+type ViewState = 'loading' | 'need-key' | 'revealed' | 'gone' | 'claimed-by-other' | 'error'
 
 const EXPIRY_WARNING_MS = 60_000
 
@@ -32,24 +32,42 @@ export default function NoteViewerPage() {
   const [mediaToken, setMediaToken] = useState<string | null>(null)
   const [watermark, setWatermark] = useState<ViewWatermark | null>(null)
 
-  const reveal = useCallback(async (key: string | undefined) => {
+    const reveal = useCallback(async (key: string | undefined) => {
     setErrorMsg('')
     try {
+      let claimToken: string | null = null
+      try {
+        claimToken = localStorage.getItem(`levpriv_claim_${slug}`)
+      } catch {
+        claimToken = null
+      }
+
       const res = await fetch(`/api/notes/${slug}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ privateKey: key }),
+        body: JSON.stringify({ privateKey: key, claimToken }),
       })
       const data = await res.json()
 
       if (!res.ok) {
-        if (data.requiresKey) {
+        if (data.claimedByOther) {
+          setState('claimed-by-other')
+        } else if (data.requiresKey) {
           setState('need-key')
           if (key) setErrorMsg(data.error || 'Incorrect private key. Try again.')
         } else {
           setState('gone')
         }
         return
+      }
+
+      if (data.claimToken) {
+        try {
+          localStorage.setItem(`levpriv_claim_${slug}`, data.claimToken)
+        } catch {
+          // localStorage unavailable - the claim still works for this
+          // session, it just won't persist across a reload.
+        }
       }
 
       setContent(data.content)
@@ -136,6 +154,18 @@ export default function NoteViewerPage() {
           <div className="text-center">
             <h1 className="text-xl font-medium mb-2">Something went wrong</h1>
             <p className="text-base-muted text-sm">{errorMsg}</p>
+          </div>
+        )}
+
+        
+        {state === 'claimed-by-other' && (
+          <div className="text-center">
+            <PadlockIcon />
+            <h1 className="text-xl font-medium mb-2 mt-4">Already viewed by someone else</h1>
+            <p className="text-base-muted text-sm">
+              This note was set to allow only its first viewer, and someone else has already
+              opened it.
+            </p>
           </div>
         )}
 

@@ -21,11 +21,14 @@ export interface PublicAttachmentMeta {
   sizeBytes: number
 }
 
+export type ViewerMode = 'single' | 'multiple'
+
 export interface CreateNoteRequest {
   content: string
   durationSeconds: number
   privateKey?: string
   burnAfterReading?: boolean
+  viewerMode?: ViewerMode
   attachments?: AttachmentInput[]
   website?: string
   formRenderedAt?: number
@@ -49,6 +52,8 @@ export interface StoredNote {
   salt: string | null
   hasPrivateKey: boolean
   burnAfterReading: boolean
+  viewerMode: ViewerMode
+  claimedByHash: string | null
   attachments: StoredAttachment[]
   ownerTokenHash: string
   createdAt: number
@@ -64,6 +69,7 @@ export interface NotePublicMeta {
   deleted: boolean
   hasPrivateKey: boolean
   burnAfterReading?: boolean
+  viewerMode?: ViewerMode
   attachments?: PublicAttachmentMeta[]
   expiresAt?: number
   createdAt?: number
@@ -86,6 +92,7 @@ export interface RevealNoteResponse {
   attachments: PublicAttachmentMeta[]
   mediaToken: string | null
   watermark: ViewWatermark
+  claimToken?: string
 }
 
 export interface ExtendNoteRequest {

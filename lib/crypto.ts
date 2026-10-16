@@ -102,3 +102,7 @@ export function generateOwnerToken(): string {
 export function generateViewId(): string {
   return crypto.randomBytes(4).toString('hex')
 }
+
+export function generateClaimToken(): string {
+  return crypto.randomBytes(24).toString('base64url')
+}

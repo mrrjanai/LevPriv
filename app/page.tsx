@@ -18,7 +18,8 @@ type CustomUnit = 'minutes' | 'hours'
 export default function HomePage() {
   const [content, setContent] = useState('')
   const [privateKey, setPrivateKey] = useState('')
-  const [burnAfterReading, setBurnAfterReading] = useState(false)
+   const [burnAfterReading, setBurnAfterReading] = useState(false)
+  const [viewerMode, setViewerMode] = useState<'single' | 'multiple'>('multiple')
   const [attachments, setAttachments] = useState<AttachmentInput[]>([])
   const [selectedSeconds, setSelectedSeconds] = useState<number>(DURATION_PRESETS[1].seconds)
   const [useCustom, setUseCustom] = useState(false)
@@ -73,6 +74,7 @@ export default function HomePage() {
           durationSeconds,
           privateKey: privateKey.length > 0 ? privateKey : undefined,
           burnAfterReading,
+          viewerMode,
           attachments: attachments.length > 0 ? attachments : undefined,
           website,
           formRenderedAt: formRenderedAtRef.current,
@@ -124,6 +126,7 @@ export default function HomePage() {
     setContent('')
     setPrivateKey('')
     setBurnAfterReading(false)
+    setViewerMode('multiple')
     setAttachments([])
     setResult(null)
     setError(null)
@@ -328,7 +331,7 @@ export default function HomePage() {
           </p>
         </Field>
 
-        <label className="flex items-center gap-2.5 mb-8 cursor-pointer select-none">
+                <label className="flex items-center gap-2.5 mb-6 cursor-pointer select-none">
           <input
             type="checkbox"
             checked={burnAfterReading}
@@ -337,6 +340,40 @@ export default function HomePage() {
           />
           <span className="text-sm text-base-white">Delete immediately after being read once</span>
         </label>
+
+        <Field label="Who can view this">
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setViewerMode('multiple')}
+              className={`text-sm rounded-md py-2.5 border transition-colors ${
+                viewerMode === 'multiple'
+                  ? 'bg-base-white text-base-black border-base-white'
+                  : 'border-base-border text-base-muted hover:text-base-white hover:border-base-mid'
+              }`}
+            >
+              Anyone with the link
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewerMode('single')}
+              className={`text-sm rounded-md py-2.5 border transition-colors ${
+                viewerMode === 'single'
+                  ? 'bg-base-white text-base-black border-base-white'
+                  : 'border-base-border text-base-muted hover:text-base-white hover:border-base-mid'
+              }`}
+            >
+              Only the first person to open it
+            </button>
+          </div>
+          {viewerMode === 'single' && (
+            <p className="text-xs text-base-muted mt-1.5">
+              "First person" means first browser to open it - if that same person opens the link
+              again from a different device, they'll be turned away too, since there's no login
+              to recognize them.
+            </p>
+          )}
+        </Field>
 
         {error && (
           <p className="text-sm text-base-white bg-base-near border border-base-border rounded-md px-4 py-3 mb-6">

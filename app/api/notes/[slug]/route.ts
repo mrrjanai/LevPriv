@@ -5,7 +5,7 @@ import { viewLimiter, wrongKeyLimiter, getClientIp } from '@/lib/ratelimit'
 import { MAX_DURATION_SECONDS, DELETE_GRACE_PERIOD_MS } from '@/lib/duration'
 import { issueMediaToken } from '@/lib/mediaToken'
 import { deleteBlobSafely } from '@/lib/blob'
-import { generateViewId } from '@/lib/crypto'
+import { generateViewId, generateClaimToken } from '@/lib/crypto'
 import type {
   StoredNote,
   NotePublicMeta,
@@ -88,12 +88,13 @@ export async function GET(req: NextRequest, { params }: { params: { slug: string
     return NextResponse.json(meta, { status: 200 })
   }
 
-  const meta: NotePublicMeta = {
+    const meta: NotePublicMeta = {
     exists: true,
     expired: false,
     deleted: false,
     hasPrivateKey: note!.hasPrivateKey,
     burnAfterReading: note!.burnAfterReading,
+    viewerMode: note!.viewerMode,
     attachments: toPublicAttachments(note!),
     expiresAt: note!.expiresAt,
     createdAt: note!.createdAt,
@@ -123,12 +124,15 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
     )
   }
 
-  let privateKey: string | undefined
+    let privateKey: string | undefined
+  let claimToken: string | undefined
   try {
     const body = await req.json()
     privateKey = typeof body?.privateKey === 'string' ? body.privateKey : undefined
+    claimToken = typeof body?.claimToken === 'string' ? body.claimToken : undefined
   } catch {
     privateKey = undefined
+    claimToken = undefined
   }
 
   if (note.hasPrivateKey && !privateKey) {
@@ -138,7 +142,7 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
     )
   }
 
-  if (note.hasPrivateKey && privateKey) {
+    if (note.hasPrivateKey && privateKey) {
     const attemptKey = `${ip}:${params.slug}`
     const { success: keyAttemptsOk } = await wrongKeyLimiter.limit(attemptKey)
     if (!keyAttemptsOk) {
@@ -147,6 +151,32 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
         { error: 'Too many incorrect attempts. Try again in a few minutes.', requiresKey: true },
         { status: 429 }
       )
+    }
+  }
+
+  // Single-viewer notes: the first successful opener claims exclusive access.
+  // Anyone else - a different browser, since there's no login to truly
+  // identify "the same person" - is turned away from here on, even though
+  // the note itself is still alive until its normal expiry.
+  let newClaimToken: string | undefined
+  if (note.viewerMode === 'single') {
+    if (note.claimedByHash) {
+      const presentedHash = claimToken ? sha256Hex(claimToken) : null
+      if (presentedHash !== note.claimedByHash) {
+        return NextResponse.json(
+          {
+            error: 'This note can only be viewed by whoever opened it first.',
+            claimedByOther: true,
+          },
+          { status: 403 }
+        )
+      }
+    } else {
+      newClaimToken = generateClaimToken()
+      const claimedNote: StoredNote = { ...note, claimedByHash: sha256Hex(newClaimToken) }
+      const ttlSeconds = Math.max(1, Math.ceil((note.expiresAt - Date.now()) / 1000))
+      await redis.set(noteKey(params.slug), claimedNote, { ex: ttlSeconds })
+      note.claimedByHash = claimedNote.claimedByHash
     }
   }
 
@@ -168,7 +198,7 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
     if (note.burnAfterReading) {
       await redis.del(noteKey(params.slug))
 
-      const response: RevealNoteResponse = {
+            const response: RevealNoteResponse = {
         content,
         views: note.views + 1,
         createdAt: note.createdAt,
@@ -177,6 +207,7 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
         attachments: attachmentsMeta,
         mediaToken,
         watermark,
+        claimToken: newClaimToken,
       }
       return NextResponse.json(response, { status: 200 })
     }
@@ -185,7 +216,7 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
     const remainingTtlSeconds = Math.max(1, Math.ceil((note.expiresAt - Date.now()) / 1000))
     await redis.set(noteKey(params.slug), updated, { ex: remainingTtlSeconds })
 
-    const response: RevealNoteResponse = {
+        const response: RevealNoteResponse = {
       content,
       views: updated.views,
       createdAt: note.createdAt,
@@ -194,6 +225,7 @@ export async function POST(req: NextRequest, { params }: { params: { slug: strin
       attachments: attachmentsMeta,
       mediaToken,
       watermark,
+      claimToken: newClaimToken,
     }
     return NextResponse.json(response, { status: 200 })
   } catch (err) {
